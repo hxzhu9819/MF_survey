@@ -1,6 +1,6 @@
 questionnaire:
   id: mf_baseline
-  version: "2026.05.11.6"
+  version: "2026.05.12.1"
   language: zh-CN
   title: "蕈样肉芽肿患者基线问卷"
   description: "用于患者共研 Beta 试用的自填问卷。除非自愿选择长期随访身份，请不要填写真实姓名、身份证号、手机号或详细住址。"
@@ -33,7 +33,8 @@ modules:
       - id: respondent_authorization_confirmed
         export_name: respondent_authorization_confirmed
         type: boolean
-        label: "我确认本人有权填写：我是成年患者本人，或已获得患者同意，或我是未成年患者的合法监护人/法定代理人。"
+        label: "请确认您有权填写这份问卷"
+        checkbox_label: "我确认本人有权填写：我是成年患者本人，或已获得患者同意，或我是未成年患者的合法监护人/法定代理人。"
         required: true
 
       - id: diagnosis_self_reported

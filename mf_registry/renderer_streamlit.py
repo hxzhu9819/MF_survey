@@ -516,9 +516,9 @@ def render_review_step(body: dict[str, Any], answers: dict[str, Any]) -> tuple[d
         if st.button("返回上一关", width="stretch"):
             st.session_state[STEP_STATE_KEY] = max(len(body.get("modules", [])) - 1, 0)
             st.rerun()
-    confirmed = st.checkbox("我确认提交本次问卷，并理解当前 Beta 版本提交后不能在页面内直接修改。")
+    confirmed = st.checkbox("我已检查答案，并确认提交本次问卷。当前 Beta 版本提交后不能在页面内直接修改。")
     with submit_col:
-        submitted = st.button("确认提交", type="primary", disabled=bool(missing) or not confirmed, width="stretch")
+        submitted = st.button("确认并提交问卷", type="primary", disabled=bool(missing) or not confirmed, width="stretch")
     return answers, submitted
 
 
@@ -568,11 +568,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
         return st.text_area("填写内容", key=key, help=help_text, label_visibility="collapsed")
 
     if question_type == "integer":
-        if question.get("allow_unknown"):
-            unknown = st.checkbox("不确定", key=f"{key}_unknown")
-            if unknown:
-                return None
-        return st.number_input(
+        value = st.number_input(
             "填写数字",
             min_value=question.get("min"),
             max_value=question.get("max"),
@@ -580,7 +576,11 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             step=1,
             key=key,
             help=help_text,
+            label_visibility="collapsed",
         )
+        if question.get("allow_unknown") and st.checkbox("我不确定，先留空", key=f"{key}_unknown"):
+            return None
+        return value
 
     if question_type == "decimal":
         return st.number_input(
@@ -590,11 +590,10 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             value=None,
             key=key,
             help=help_text,
+            label_visibility="collapsed",
         )
 
     if question_type == "year":
-        if question.get("allow_unknown") and st.checkbox("不确定", key=f"{key}_unknown"):
-            return None
         max_year = min(int(question.get("max", date.today().year)), date.today().year)
         min_year = int(question.get("min", 1920))
         years = [None, *range(max_year, min_year - 1, -1)]
@@ -605,11 +604,11 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             key=key,
             help=help_text,
         )
+        if question.get("allow_unknown") and st.checkbox("我不确定，先留空", key=f"{key}_unknown"):
+            return None
         return int(value) if value else None
 
     if question_type == "month":
-        if question.get("allow_unknown") and st.checkbox("不确定", key=f"{key}_unknown"):
-            return None
         year_col, month_col = st.columns(2, gap="small")
         with year_col:
             year = st.selectbox(
@@ -626,12 +625,14 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
                 format_func=lambda value: "请选择月份" if value is None else f"{value:02d}月",
                 key=f"{key}_month",
             )
+        if question.get("allow_unknown") and st.checkbox("我不确定，先留空", key=f"{key}_unknown"):
+            return None
         if year and month:
             return f"{int(year):04d}-{int(month):02d}"
         return None
 
     if question_type == "date":
-        value = st.date_input("日期", value=None, key=key, help=help_text)
+        value = st.date_input("日期", value=None, key=key, help=help_text, label_visibility="collapsed")
         return value.isoformat() if value else None
 
     if question_type == "single_select":
@@ -645,6 +646,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             format_func=lambda value: "请选择" if value is None else label_by_value[value],
             key=key,
             help=help_text,
+            label_visibility="collapsed",
         )
         return selected
 
@@ -655,22 +657,26 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             options=[option["label"] for option in options],
             key=key,
             help=help_text,
+            label_visibility="collapsed",
         )
         return [option["value"] for option in options if option["label"] in selected]
 
     if question_type == "boolean":
-        return st.checkbox(label, key=key, help=help_text)
+        checkbox_label = question.get("checkbox_label", label)
+        return st.checkbox(str(checkbox_label), key=key, help=help_text)
 
     if question_type == "slider_nrs_0_10":
-        if not question.get("required") and st.checkbox("暂不填写", key=f"{key}_skip"):
-            return None
         anchors = question.get("anchors", {})
-        return render_nrs_buttons(key, anchors, help_text)
+        value = render_nrs_buttons(key, anchors, help_text)
+        if not question.get("required") and st.checkbox("暂时无法判断，先留空", key=f"{key}_skip"):
+            return None
+        return value
 
     if question_type == "body_area_percent":
-        if not question.get("required") and st.checkbox("暂不填写", key=f"{key}_skip"):
+        value = st.slider("百分比", min_value=0, max_value=100, value=0, key=key, help=help_text)
+        if not question.get("required") and st.checkbox("暂时无法判断，先留空", key=f"{key}_skip"):
             return None
-        return st.slider("百分比", min_value=0, max_value=100, value=0, key=key, help=help_text)
+        return value
 
     if question_type == "region_select":
         province_col, city_col = st.columns(2, gap="small")
@@ -752,7 +758,7 @@ def render_nrs_buttons(key: str, anchors: dict[str, str], help_text: str | None)
         label_visibility="collapsed",
     )
     if selected is None:
-        st.caption("请选择一个分数，或勾选“暂不填写”。")
+        st.caption("请选择一个分数；如果暂时无法判断，可以在下方选择先留空。")
         return None
     st.markdown(
         f"""
@@ -873,7 +879,7 @@ def _value_from_label(label: str, value_to_label: dict[str, str]) -> str | None:
 
 def render_question_header(question: dict[str, Any], index: int | None) -> None:
     required = "必填" if question.get("required") else "可跳过"
-    prefix = f"Q{index}" if index is not None else "问题"
+    prefix = f"第 {index} 题" if index is not None else "问题"
     st.markdown(
         f"""
         <div class="mf-question-head">

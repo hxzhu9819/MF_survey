@@ -142,6 +142,11 @@ def inject_style() -> None:
             --mf-coral: #b65f4a;
             --mf-warm: #fff8ef;
             --mf-paper: #fffdf7;
+            --mf-surface: #ffffff;
+            --mf-surface-warm: #fffdfa;
+            --mf-input-border: rgba(96, 113, 122, 0.42);
+            --mf-input-border-strong: rgba(47, 125, 104, 0.62);
+            --mf-focus: rgba(47, 125, 104, 0.18);
             --mf-shadow: 0 18px 44px rgba(47, 83, 77, 0.08);
             --mf-photo:
                 radial-gradient(circle at 78% 28%, rgba(223, 242, 231, 0.9) 0 15%, transparent 31%),
@@ -233,7 +238,21 @@ def inject_style() -> None:
             border-radius: 8px;
             min-height: 2.75rem;
             font-weight: 650;
+            box-shadow: 0 8px 18px rgba(47, 83, 77, 0.06);
+            transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(47, 83, 77, 0.1);
+        }
+        .stButton > button:focus, .stDownloadButton > button:focus {
+            outline: 3px solid var(--mf-focus);
+            outline-offset: 2px;
+        }
+        .stButton > button:disabled, .stDownloadButton > button:disabled {
+            opacity: 0.58;
             box-shadow: none;
+            transform: none;
         }
         .mf-top-nav {
             width: 100%;
@@ -324,9 +343,90 @@ def inject_style() -> None:
             white-space: nowrap;
             border: 0;
         }
-        .stTextInput input, .stTextArea textarea, .stNumberInput input {
+        .stTextInput input,
+        .stTextArea textarea,
+        .stNumberInput input,
+        .stDateInput input,
+        .stSelectbox [data-baseweb="select"] > div,
+        .stMultiSelect [data-baseweb="select"] > div {
+            min-height: 2.72rem;
+            border-radius: 8px !important;
+            border: 1px solid var(--mf-input-border) !important;
+            background: var(--mf-surface) !important;
+            color: var(--mf-ink) !important;
+            box-shadow: 0 1px 0 rgba(47, 83, 77, 0.04), 0 8px 20px rgba(47, 83, 77, 0.035);
+            transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+        }
+        .stTextArea textarea {
+            min-height: 7.5rem;
+            line-height: 1.6;
+        }
+        .stTextInput input:focus,
+        .stTextArea textarea:focus,
+        .stNumberInput input:focus,
+        .stDateInput input:focus,
+        .stSelectbox [data-baseweb="select"]:focus-within > div,
+        .stMultiSelect [data-baseweb="select"]:focus-within > div {
+            border-color: var(--mf-input-border-strong) !important;
+            box-shadow: 0 0 0 3px var(--mf-focus), 0 10px 24px rgba(47, 83, 77, 0.07) !important;
+        }
+        .stSelectbox [data-baseweb="select"] span,
+        .stMultiSelect [data-baseweb="select"] span {
+            color: var(--mf-ink);
+        }
+        [data-baseweb="popover"] [role="listbox"] {
+            border: 1px solid rgba(96, 113, 122, 0.24);
             border-radius: 8px;
-            background: rgba(255, 255, 255, 0.92);
+            background: var(--mf-surface);
+            box-shadow: 0 18px 40px rgba(47, 83, 77, 0.12);
+            overflow: hidden;
+        }
+        [data-baseweb="popover"] [role="option"] {
+            color: var(--mf-ink);
+        }
+        .stCheckbox label,
+        .stRadio label {
+            color: var(--mf-ink);
+        }
+        .stCheckbox label {
+            width: fit-content;
+            max-width: 100%;
+            border: 1px solid rgba(217, 229, 223, 0.95);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 0.42rem 0.62rem;
+            transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+        }
+        .stCheckbox label:hover {
+            border-color: rgba(47, 125, 104, 0.38);
+            background: #ffffff;
+            box-shadow: 0 8px 18px rgba(47, 83, 77, 0.05);
+        }
+        .stRadio [role="radiogroup"] {
+            gap: 0.46rem 0.5rem;
+            align-items: center;
+        }
+        .stRadio [role="radiogroup"] label {
+            min-height: 2.35rem;
+            border: 1px solid rgba(96, 113, 122, 0.28);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.32rem 0.58rem 0.32rem 0.5rem;
+            box-shadow: 0 1px 0 rgba(47, 83, 77, 0.04);
+            transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+        }
+        .stRadio [role="radiogroup"] label:hover {
+            transform: translateY(-1px);
+            border-color: rgba(47, 125, 104, 0.42);
+            box-shadow: 0 8px 16px rgba(47, 83, 77, 0.06);
+        }
+        .stSlider [data-baseweb="slider"] {
+            padding-top: 0.35rem;
+            padding-bottom: 0.55rem;
+        }
+        div[data-testid="stCaptionContainer"] {
+            color: #51646c;
+            line-height: 1.55;
         }
         .mf-landing-hero {
             min-height: min(62vh, 32rem);
@@ -649,6 +749,82 @@ def inject_style() -> None:
         .mf-inline-note span {
             color: #35566f;
         }
+        .mf-submit-success {
+            margin: 1.25rem 0;
+            padding: clamp(1rem, 2.2vw, 1.35rem);
+            border: 1px solid rgba(47, 125, 104, 0.24);
+            border-left: 5px solid var(--mf-teal);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(223, 242, 231, 0.78), rgba(255, 253, 247, 0.95) 56%),
+                #ffffff;
+            box-shadow: 0 18px 44px rgba(47, 83, 77, 0.08);
+        }
+        .mf-submit-success h2 {
+            margin: 0 0 0.45rem 0;
+            color: var(--mf-ink);
+            font-size: clamp(1.45rem, 3vw, 2rem);
+            line-height: 1.25;
+        }
+        .mf-submit-success p {
+            max-width: 50rem;
+            margin: 0;
+            color: var(--mf-muted);
+            line-height: 1.7;
+        }
+        .mf-credential-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+            gap: 0.8rem;
+            margin-top: 1rem;
+        }
+        .mf-credential {
+            border: 1px solid rgba(96, 113, 122, 0.22);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.85rem;
+            box-shadow: 0 8px 20px rgba(47, 83, 77, 0.045);
+        }
+        .mf-credential.important {
+            border-color: rgba(182, 95, 74, 0.38);
+            background: linear-gradient(180deg, #fffdf9 0%, #fff7ef 100%);
+        }
+        .mf-credential small {
+            display: block;
+            color: var(--mf-muted);
+            font-size: 0.78rem;
+            font-weight: 750;
+            margin-bottom: 0.25rem;
+        }
+        .mf-credential strong {
+            display: block;
+            color: var(--mf-ink);
+            font-size: 1rem;
+            margin-bottom: 0.55rem;
+        }
+        .mf-credential code {
+            display: block;
+            width: 100%;
+            border: 1px solid rgba(47, 125, 104, 0.22);
+            border-radius: 8px;
+            background: #f6faf7;
+            color: var(--mf-ink);
+            font-size: 1rem;
+            line-height: 1.5;
+            padding: 0.65rem;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+        .mf-credential.important code {
+            border-color: rgba(182, 95, 74, 0.36);
+            background: #fffaf4;
+        }
+        .mf-submit-reminder {
+            margin-top: 0.85rem;
+            color: #684335;
+            font-size: 0.92rem;
+            line-height: 1.65;
+        }
         .mf-tnmb-board {
             border: 1px solid rgba(79, 111, 159, 0.2);
             border-radius: 8px;
@@ -909,40 +1085,53 @@ def inject_style() -> None:
             display: grid;
             grid-template-columns: auto 1fr auto;
             align-items: center;
-            gap: 0.65rem;
-            margin: 1.2rem 0 0.45rem 0;
-            padding-top: 1rem;
-            border-top: 1px solid rgba(217, 229, 223, 0.66);
+            gap: 0.78rem;
+            margin: 1.3rem 0 0.55rem 0;
+            padding: 0.82rem 0.9rem;
+            border: 1px solid rgba(217, 229, 223, 0.92);
+            border-left: 4px solid rgba(47, 125, 104, 0.5);
+            border-radius: 8px;
+            background:
+                linear-gradient(90deg, rgba(223, 242, 231, 0.5), rgba(255, 255, 255, 0.92) 44%),
+                #ffffff;
+            box-shadow: 0 8px 20px rgba(47, 83, 77, 0.035);
         }
         .mf-question-head span {
             color: var(--mf-teal);
             font-weight: 850;
             font-size: 0.86rem;
+            white-space: nowrap;
         }
         .mf-question-head strong {
             color: var(--mf-ink);
-            font-size: 1rem;
+            font-size: 1.02rem;
             line-height: 1.45;
         }
         .mf-question-head em {
-            border: 1px solid var(--mf-line);
+            border: 1px solid rgba(47, 125, 104, 0.22);
             border-radius: 999px;
-            color: var(--mf-muted);
+            color: var(--mf-teal);
             font-size: 0.78rem;
             font-style: normal;
             padding: 0.16rem 0.5rem;
             white-space: nowrap;
-            background: rgba(255, 255, 255, 0.74);
+            background: rgba(223, 242, 231, 0.72);
         }
         .mf-subsection {
-            margin: 1.8rem 0 0.55rem;
-            padding: 0.7rem 0 0.1rem;
-            border-top: 1px solid rgba(47, 125, 104, 0.22);
+            margin: 1.95rem 0 0.75rem;
+            padding: 0.85rem 1rem;
+            border: 1px solid rgba(217, 229, 223, 0.9);
+            border-left: 4px solid rgba(79, 111, 159, 0.42);
+            border-radius: 8px;
+            background:
+                linear-gradient(90deg, rgba(246, 250, 247, 0.98), rgba(255, 253, 247, 0.64)),
+                var(--mf-surface-warm);
         }
         .mf-subsection strong {
             display: block;
-            color: var(--mf-teal);
-            font-size: 1.04rem;
+            color: var(--mf-ink);
+            font-size: 1.08rem;
+            font-weight: 780;
             letter-spacing: 0 !important;
         }
         .mf-subsection span {
@@ -960,9 +1149,14 @@ def inject_style() -> None:
             margin: 0.15rem 0 0.55rem;
             color: var(--mf-muted);
             font-size: 0.88rem;
+            max-width: 44rem;
         }
         .mf-nrs-current {
-            margin-top: -0.15rem;
+            width: fit-content;
+            margin-top: 0.1rem;
+            padding: 0.28rem 0.55rem;
+            border-radius: 8px;
+            background: rgba(223, 242, 231, 0.72);
             color: var(--mf-muted);
             font-size: 0.9rem;
         }
@@ -1294,6 +1488,63 @@ def render_resources() -> None:
     )
 
 
+def credential_card(title: str, description: str, value: str, important: bool = False) -> str:
+    variant = " important" if important else ""
+    return f"""
+      <div class="mf-credential{variant}">
+        <small>{html.escape(title)}</small>
+        <strong>{html.escape(description)}</strong>
+        <code>{html.escape(value)}</code>
+      </div>
+    """
+
+
+def render_submission_success(saved) -> None:
+    cards = [
+        credential_card(
+            "匿名编号",
+            "以后与研究团队沟通、核对提交记录时使用",
+            saved.public_code,
+        )
+    ]
+    reminder = "请保存匿名编号。您没有开启长期随访身份，本次提交仍会匿名记录。"
+
+    if saved.followup_public_key:
+        cards.append(
+            credential_card(
+                "Public key",
+                "可公开用于研究匹配，不等同于联系方式",
+                saved.followup_public_key,
+            )
+        )
+        if saved.retrieval_key:
+            cards.append(
+                credential_card(
+                    "找回密钥",
+                    "只显示这一次，请像保存密码一样保存",
+                    saved.retrieval_key,
+                    important=True,
+                )
+            )
+            reminder = "找回密钥不会以明文保存，系统之后无法替您查看原文。"
+        else:
+            reminder = "检测到同一随访身份已存在，本次答案已关联到原有匿名参与者。"
+
+    st.markdown(
+        f"""
+        <section class="mf-submit-success">
+          <h2>感谢您完成这份问卷</h2>
+          <p>您的回答会帮助我们把 MF 患者的诊断经历、分期线索、治疗反应和真实需求整理得更清楚。下面是本次提交后需要保存的信息。</p>
+          <div class="mf-credential-grid">
+            {''.join(cards)}
+          </div>
+          <div class="mf-submit-reminder">{html.escape(reminder)}</div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_survey(bundle, connection) -> None:
     st.title(bundle.title)
     description = bundle.body["questionnaire"].get("description")
@@ -1339,20 +1590,7 @@ def render_survey(bundle, connection) -> None:
 
         completion = completion_percent(bundle.body, answers)
         saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
-        st.success("提交成功。请记录您的匿名编号。")
-        st.code(saved.public_code)
-        if saved.followup_public_key:
-            st.markdown("#### 长期随访身份")
-            st.write("这是可公开用于研究随访匹配的 public key：")
-            st.code(saved.followup_public_key)
-            if saved.retrieval_key:
-                st.write("这是只给您本人保存的 retrieval key。后续找回或随访问卷会用到它：")
-                st.code(saved.retrieval_key)
-                st.warning("请像保存密码一样保存 retrieval key。系统只保存它的哈希，无法替您查看原文。")
-            else:
-                st.info("检测到同一随访身份已存在，本次答案已关联到原有匿名参与者。")
-        else:
-            st.caption("您没有选择长期随访身份。本次提交仍会获得匿名编号。")
+        render_submission_success(saved)
 
 
 def render_followup_identity() -> FollowupIdentityInput | None:
