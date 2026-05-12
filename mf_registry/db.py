@@ -224,10 +224,10 @@ def save_submission(
         )
 
         questions_by_id = {question["id"]: question for question in bundle.questions}
-        for question_id, value in answers.items():
-            question = questions_by_id.get(question_id)
-            if not question:
-                continue
+        user_input_questions = [question for question in bundle.questions if question["type"] != "info_text"]
+        for question in user_input_questions:
+            question_id = question["id"]
+            value = answers.get(question_id)
             connection.execute(
                 """
                 insert into answers (id, session_id, question_id, export_name, value, answered_at, source)

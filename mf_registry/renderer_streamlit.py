@@ -60,7 +60,9 @@ def render_questionnaire_wizard(body: dict[str, Any]) -> tuple[dict[str, Any], b
         st.caption(f"第 {current_step + 1} 关 / 共 {len(modules)} 关")
         st.divider()
         for index, question in enumerate(module.get("questions", []), start=1):
-            answers[question["id"]] = render_question(question, index=index)
+            value = render_question(question, index=index)
+            if question["type"] != "info_text":
+                answers[question["id"]] = value
         if module.get("id") == "staging_skin_burden":
             render_tnmb_helper_board(answers, module)
 

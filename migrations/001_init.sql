@@ -67,13 +67,3 @@ create table if not exists derived_variables (
   algorithm_version text not null,
   created_at timestamptz not null default now()
 );
-
-create table if not exists data_quality_flags (
-  id uuid primary key,
-  participant_id uuid not null references participants(id),
-  session_id uuid null references survey_sessions(id),
-  flag_type text not null,
-  severity text not null,
-  message text not null,
-  resolved_at timestamptz null
-);
