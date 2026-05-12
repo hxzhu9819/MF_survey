@@ -1,0 +1,710 @@
+questionnaire:
+  id: mf_baseline
+  version: "2026.05.11.4"
+  language: zh-CN
+  title: "蕈样肉芽肿患者基线问卷"
+  description: "用于患者共研 Beta 试用的自填问卷。除非自愿选择长期随访身份，请不要填写真实姓名、身份证号、手机号或详细住址。"
+  consent_version: "2026.05.11"
+
+modules:
+  - id: eligibility
+    title: "参与条件"
+    description: |
+      这一章只确认最基本的参与条件。我们不希望不适合的人花很多时间填写，
+      也不希望把疑似和确诊患者混在一起分析。
+    why_we_ask: "这部分用于判断样本是否能进入正式分析；疑似病例可以保留，但会单独标记。"
+    order: 10
+    questions:
+      - id: age_18_or_above
+        export_name: age_18_or_above
+        type: boolean
+        label: "我已年满18岁"
+        required: true
+
+      - id: diagnosis_self_reported
+        export_name: diagnosis_self_reported
+        type: single_select
+        label: "您是否曾被医生诊断为蕈样肉芽肿或皮肤T细胞淋巴瘤？"
+        required: true
+        options:
+          - value: mf_confirmed
+            label: "是，蕈样肉芽肿/MF"
+          - value: ctcl_confirmed
+            label: "是，皮肤T细胞淋巴瘤/CTCL，但具体亚型不确定"
+          - value: suspected
+            label: "医生怀疑，但尚未确诊"
+          - value: "no"
+            label: "否"
+
+  - id: demographics
+    title: "基本信息"
+    description: |
+      这一章只收集研究所需的粗粒度信息。请不要填写详细地址、工作单位、学校或任何能直接识别您的内容。
+    why_we_ask: "年龄、性别和地区会影响诊断路径、治疗可及性和症状负担，是分析诊断延迟时必须考虑的背景因素。"
+    order: 20
+    questions:
+      - id: birth_year
+        export_name: birth_year
+        type: year
+        label: "出生年份"
+        min: 1920
+        max: 2008
+        required: false
+        allow_unknown: true
+
+      - id: sex_at_birth
+        export_name: sex_at_birth
+        type: single_select
+        label: "出生登记性别"
+        required: false
+        options:
+          - value: female
+            label: "女"
+          - value: male
+            label: "男"
+          - value: prefer_not_to_answer
+            label: "不愿回答"
+
+      - id: care_region
+        export_name: care_region
+        type: region_select
+        label: "目前主要就医所在地区"
+        required: false
+        help: "请选择省/直辖市/自治区/特别行政区和城市。不需要填写详细地址。"
+
+      - id: city_tier_self_reported
+        export_name: city_tier_self_reported
+        type: single_select
+        label: "主要就医城市类型"
+        required: false
+        options:
+          - value: first_tier_or_new_first_tier
+            label: "一线/新一线城市"
+          - value: provincial_capital
+            label: "省会或计划单列市"
+          - value: prefecture
+            label: "地级市"
+          - value: county_or_town
+            label: "县城/乡镇"
+          - value: unknown
+            label: "不确定"
+
+  - id: diagnosis_journey
+    title: "诊断经历"
+    description: |
+      很多 MF 患者确诊前经历过反复就诊、误诊和多次活检。请按记忆填写大概时间即可；
+      记不清并不是错误，可以选择“不确定”。
+    why_we_ask: "诊断延迟可能是这个队列最有科学价值的问题之一，也最能帮助未来患者更早获得正确诊断。"
+    order: 30
+    questions:
+      - id: first_symptom_month
+        export_name: first_symptom_month
+        type: month
+        label: "第一次发现皮肤异常的大约年月"
+        required: false
+        allow_unknown: true
+
+      - id: first_dermatology_visit_month
+        export_name: first_dermatology_visit_month
+        type: month
+        label: "第一次因这些症状看皮肤科的大约年月"
+        required: false
+        allow_unknown: true
+
+      - id: misdiagnosed_before_mf
+        export_name: misdiagnosed_before_mf
+        type: single_select
+        label: "确诊 MF/CTCL 前，是否曾被认为是其他疾病？"
+        required: false
+        options:
+          - value: "yes"
+            label: "是"
+          - value: "no"
+            label: "否"
+          - value: unknown
+            label: "不确定"
+
+      - id: misdiagnosis_events
+        export_name: misdiagnosis_events
+        type: repeatable_misdiagnosis
+        label: "如果曾被误诊，可以添加就诊/误诊经历"
+        required: false
+        help: "建议填写就医地区和医院层级，不填写医院全名。"
+
+      - id: skin_biopsy_month
+        export_name: skin_biopsy_month
+        type: month
+        label: "第一次做皮肤活检的大约年月"
+        required: false
+        allow_unknown: true
+
+      - id: confirmed_diagnosis_month
+        export_name: confirmed_diagnosis_month
+        type: month
+        label: "首次被明确诊断为蕈样肉芽肿/CTCL的大约年月"
+        required: false
+        allow_unknown: true
+
+      - id: biopsy_count_before_diagnosis
+        export_name: biopsy_count_before_diagnosis
+        type: integer
+        label: "确诊前大约做过几次皮肤活检？"
+        min: 0
+        max: 30
+        required: false
+        allow_unknown: true
+
+      - id: diagnosis_methods
+        export_name: diagnosis_methods
+        type: multiselect
+        label: "最终确诊主要依据了哪些检查或信息？"
+        required: false
+        options:
+          - value: clinical_exam
+            label: "皮肤科临床表现"
+          - value: skin_biopsy_pathology
+            label: "皮肤活检病理"
+          - value: immunohistochemistry
+            label: "免疫组化/IHC"
+          - value: tcr_clonality
+            label: "TCR 基因重排/克隆性检测"
+          - value: blood_flow_cytometry
+            label: "血液流式细胞术"
+          - value: imaging
+            label: "影像检查"
+          - value: lymph_node_biopsy
+            label: "淋巴结活检"
+          - value: expert_consultation
+            label: "皮肤淋巴瘤/CTCL 专家会诊"
+          - value: unknown
+            label: "不确定"
+          - value: other
+            label: "其他"
+
+  - id: disease_state
+    title: "目前皮肤情况"
+    description: |
+      这一章关注您最近一周的真实感受和皮肤受累范围。没有标准答案，也不需要把病情说得更轻或更重。
+      如果不确定皮损面积，可以用“一个手掌约等于 1% 全身面积”的方法粗略估计。
+    why_we_ask: "皮肤范围、瘙痒、睡眠和疼痛能反映患者实际负担，是单看病理报告很容易漏掉的信息。"
+    order: 50
+    questions:
+      - id: current_lesion_types
+        export_name: current_lesion_types
+        type: multiselect
+        label: "目前主要有哪些皮肤表现？"
+        required: false
+        options:
+          - value: patch
+            label: "斑片：较平、颜色改变或轻度脱屑"
+          - value: plaque
+            label: "斑块：明显增厚或凸起"
+          - value: tumor
+            label: "肿瘤/结节：明显隆起的包块"
+          - value: erythroderma
+            label: "红皮病：大面积发红，接近全身"
+          - value: hypopigmented
+            label: "色素减退/发白"
+          - value: follicular
+            label: "毛囊性丘疹/毛发区域明显"
+          - value: uncertain
+            label: "不确定"
+
+      - id: current_bsa_percent
+        export_name: current_bsa_percent
+        type: body_area_percent
+        label: "目前皮损大约占全身皮肤面积百分比"
+        required: false
+        help: "可以粗略估计：一个手掌加五指约等于1%。"
+
+      - id: worst_bsa_percent
+        export_name: worst_bsa_percent
+        type: body_area_percent
+        label: "病情最重时皮损大约占全身皮肤面积百分比"
+        required: false
+
+      - id: itch_nrs
+        export_name: itch_nrs
+        type: slider_nrs_0_10
+        label: "过去7天平均瘙痒程度"
+        anchors:
+          low: "0 = 完全不痒"
+          high: "10 = 最严重瘙痒"
+        required: false
+
+      - id: sleep_disturbance_nrs
+        export_name: sleep_disturbance_nrs
+        type: slider_nrs_0_10
+        label: "过去7天皮肤问题影响睡眠的程度"
+        anchors:
+          low: "0 = 不影响"
+          high: "10 = 严重影响"
+        required: false
+
+      - id: pain_burning_nrs
+        export_name: pain_burning_nrs
+        type: slider_nrs_0_10
+        label: "过去7天皮肤疼痛/灼热程度"
+        anchors:
+          low: "0 = 没有"
+          high: "10 = 最严重"
+        required: false
+
+      - id: fatigue_nrs
+        export_name: fatigue_nrs
+        type: slider_nrs_0_10
+        label: "过去7天疲劳程度"
+        anchors:
+          low: "0 = 没有疲劳"
+          high: "10 = 极度疲劳"
+        required: false
+
+  - id: staging_skin_burden
+    title: "TNMB 和 mSWAT"
+    description: |
+      这一章把医生告知的正式分期、TNMB 四部分和 mSWAT 皮肤评分分开记录。
+      TNMB 和 mSWAT 都有固定定义；这里会按您填写的信息生成一个自填估算，方便和医生分期对照。
+    why_we_ask: "TNMB 是 MF/SS 临床分期的核心框架，mSWAT 是量化皮肤负担和随访变化的常用工具。分开记录能帮助研究真实世界中患者是否被清楚告知分期，也能鼓励患者理解自己的病情记录。"
+    order: 40
+    questions:
+      - id: staging_info_note
+        export_name: staging_info_note
+        type: info_text
+        label: "官方定义摘要：T1 为斑片/斑块小于 10% 体表面积；T2 为达到或超过 10%；T3 为至少 1 个直径约 1 cm 或以上的肿瘤；T4 为红皮病或融合性红斑达到约 80% 体表面积。mSWAT = 斑片面积×1 + 斑块面积×2 + 肿瘤面积×4。"
+        required: false
+
+      - id: physician_overall_stage
+        export_name: physician_overall_stage
+        type: single_select
+        label: "医生或病历是否告诉过您 MF/CTCL 的临床分期？"
+        required: false
+        options:
+          - value: ia
+            label: "IA"
+          - value: ib
+            label: "IB"
+          - value: iia
+            label: "IIA"
+          - value: iib
+            label: "IIB"
+          - value: iiia
+            label: "IIIA"
+          - value: iiib
+            label: "IIIB"
+          - value: iva1
+            label: "IVA1"
+          - value: iva2
+            label: "IVA2"
+          - value: ivb
+            label: "IVB"
+          - value: early_stage_unspecified
+            label: "医生只说早期，但没有具体分期"
+          - value: advanced_stage_unspecified
+            label: "医生只说进展期/晚期，但没有具体分期"
+          - value: not_told
+            label: "没有被告知分期"
+          - value: unknown
+            label: "不确定/记不清"
+
+      - id: physician_t_category
+        export_name: physician_t_category
+        type: single_select
+        label: "如果医生或病历写过皮肤 T 分期，最接近哪一项？"
+        required: false
+        options:
+          - value: t1
+            label: "T1：斑片/斑块小于 10% 体表面积"
+          - value: t2
+            label: "T2：斑片/斑块达到或超过 10% 体表面积"
+          - value: t3
+            label: "T3：有一个或多个皮肤肿瘤/结节"
+          - value: t4
+            label: "T4：红皮病，接近全身皮肤发红"
+          - value: not_told
+            label: "没有被告知"
+          - value: unknown
+            label: "不确定/看不懂报告"
+
+      - id: mswat_patch_bsa_percent
+        export_name: mswat_patch_bsa_percent
+        type: body_area_percent
+        label: "目前斑片大约占全身皮肤面积百分比"
+        required: false
+        help: "一个手掌加五指大约等于 1% 全身皮肤面积。斑片通常较平，主要是颜色改变、轻度脱屑或轻微浸润。"
+
+      - id: mswat_plaque_bsa_percent
+        export_name: mswat_plaque_bsa_percent
+        type: body_area_percent
+        label: "目前斑块大约占全身皮肤面积百分比"
+        required: false
+        help: "斑块通常比斑片更厚、更凸起或边界更清楚。"
+
+      - id: mswat_tumor_bsa_percent
+        export_name: mswat_tumor_bsa_percent
+        type: body_area_percent
+        label: "目前肿瘤/结节大约占全身皮肤面积百分比"
+        required: false
+        help: "这里指明显隆起的包块或结节。如果没有，请保持 0。"
+
+      - id: erythroderma_self_reported
+        export_name: erythroderma_self_reported
+        type: single_select
+        label: "是否曾被医生说过“红皮病”或接近全身皮肤发红？"
+        required: false
+        options:
+          - value: yes_current
+            label: "是，目前仍有"
+          - value: yes_past
+            label: "是，过去有过"
+          - value: "no"
+            label: "没有"
+          - value: unknown
+            label: "不确定"
+
+      - id: tnmb_helper_note
+        export_name: tnmb_helper_note
+        type: info_text
+        label: "下面几题用于整理 TNMB：T 代表皮肤，N 代表淋巴结，M 代表内脏受累，B 代表血液受累。N、M、B 很多项目需要医生查体、影像、病理或流式细胞术才能判断；不确定可以跳过。"
+        required: false
+
+      - id: tnmb_node_status_self_reported
+        export_name: tnmb_node_status_self_reported
+        type: single_select
+        label: "N 淋巴结：医生是否提到过异常淋巴结或淋巴结活检结果？"
+        required: false
+        options:
+          - value: no_abnormal_nodes
+            label: "没有异常淋巴结，或医生说淋巴结没问题"
+          - value: enlarged_not_biopsied
+            label: "有淋巴结肿大，但没有活检或不清楚结果"
+          - value: reactive_or_dermatopathic
+            label: "活检后医生说反应性/皮肤病性改变，未明确肿瘤受累"
+          - value: involved_no_architecture_loss
+            label: "活检提示受累，但不清楚是否破坏淋巴结结构"
+          - value: involved_architecture_loss_or_n3
+            label: "医生说 N3、明显受累或淋巴结结构被破坏"
+          - value: not_checked
+            label: "没有检查过"
+          - value: unknown
+            label: "不确定/看不懂报告"
+
+      - id: tnmb_visceral_status_self_reported
+        export_name: tnmb_visceral_status_self_reported
+        type: single_select
+        label: "M 内脏：医生是否确认过 MF/CTCL 累及内脏器官？"
+        required: false
+        options:
+          - value: "no"
+            label: "没有"
+          - value: suspected_only
+            label: "影像或检查提示可疑，但未确认"
+          - value: confirmed
+            label: "医生确认有内脏受累"
+          - value: not_checked
+            label: "没有检查过"
+          - value: unknown
+            label: "不确定/看不懂报告"
+
+      - id: tnmb_blood_status_self_reported
+        export_name: tnmb_blood_status_self_reported
+        type: single_select
+        label: "B 血液：医生是否提到过血液受累、Sézary/塞扎里细胞、异常 T 细胞或流式异常？"
+        required: false
+        options:
+          - value: no_or_b0
+            label: "没有，或医生说 B0/血液未受累"
+          - value: low_or_b1
+            label: "低水平血液受累，或医生说 B1"
+          - value: high_or_b2
+            label: "高水平血液受累，或医生说 B2/Sézary 综合征"
+          - value: abnormal_uncertain
+            label: "检查有异常，但不知道属于 B1 还是 B2"
+          - value: not_checked
+            label: "没有做过血液流式/相关检查"
+          - value: unknown
+            label: "不确定/看不懂报告"
+
+      - id: staging_encouragement
+        export_name: staging_encouragement
+        type: info_text
+        label: "这些问题不是考试。很多患者从未被清楚告知分期，选择“不确定”本身也是很重要的数据。"
+        required: false
+
+  - id: pathology_labs
+    title: "病理和检查"
+    description: |
+      如果您手边没有报告，或者看不懂某些医学词汇，可以选择“不确定”。
+      请不要上传报告原件，也不要把报告编号、姓名、医院内部号码写进文本框。
+    why_we_ask: "病理、TCR、血液和淋巴结信息能帮助我们区分不同风险和不同亚型，但患者自填数据会在分析中明确标注为未验证。"
+    order: 60
+    questions:
+      - id: mf_subtype
+        export_name: mf_subtype
+        type: multiselect
+        label: "医生或病理报告提到过哪些类型/特征？"
+        required: false
+        options:
+          - value: classic
+            label: "经典型 MF"
+          - value: folliculotropic
+            label: "亲毛囊型/毛囊性 MF"
+          - value: hypopigmented
+            label: "色素减退型 MF"
+          - value: poikilodermatous
+            label: "异色病样 MF"
+          - value: large_cell_transformation
+            label: "大细胞转化/LCT"
+          - value: cd30_positive
+            label: "CD30 阳性"
+          - value: sezary_syndrome
+            label: "Sézary 综合征/塞扎里综合征"
+          - value: uncertain
+            label: "不确定"
+
+      - id: tcr_clonality
+        export_name: tcr_clonality
+        type: single_select
+        label: "TCR基因重排/克隆性检测结果"
+        required: false
+        options:
+          - value: positive
+            label: "阳性/检出克隆性"
+          - value: negative
+            label: "阴性"
+          - value: not_done
+            label: "未做"
+          - value: unknown
+            label: "不确定"
+
+      - id: blood_involvement
+        export_name: blood_involvement
+        type: single_select
+        label: "医生是否提到血液受累、异常T细胞或流式细胞术异常？"
+        required: false
+        options:
+          - value: "yes"
+            label: "是"
+          - value: "no"
+            label: "否"
+          - value: not_tested
+            label: "没有检查"
+          - value: unknown
+            label: "不确定"
+
+      - id: lymph_node_or_visceral
+        export_name: lymph_node_or_visceral
+        type: multiselect
+        label: "是否有医生确认的淋巴结或内脏受累？"
+        required: false
+        options:
+          - value: palpable_nodes_only
+            label: "摸到或影像提示淋巴结肿大，但不确定是否受累"
+          - value: node_biopsy_positive
+            label: "淋巴结活检提示受累"
+          - value: visceral_involvement
+            label: "内脏受累"
+          - value: "no"
+            label: "没有"
+          - value: unknown
+            label: "不确定"
+
+  - id: treatments
+    title: "治疗和康复情况"
+    description: |
+      这一章记录您尝试过的治疗、大约多久好转、是否复发以及复发时间。
+      它不是为了评价某位医生或某种方案，而是为了理解真实世界中治疗反应和病情反复的节奏。
+    why_we_ask: "300 人规模更适合描述治疗路径、缓解持续时间和复发模式，不适合直接证明哪种治疗更好。"
+    order: 70
+    questions:
+      - id: treatments_ever
+        export_name: treatments_ever
+        type: multiselect
+        label: "曾经接受过哪些治疗？"
+        required: false
+        options:
+          - value: topical_steroids
+            label: "外用激素"
+          - value: topical_nitrogen_mustard
+            label: "外用氮芥/氯甲喹啉"
+          - value: topical_retinoid
+            label: "外用维A酸类"
+          - value: nb_uvb
+            label: "窄谱UVB光疗"
+          - value: puva
+            label: "PUVA光疗"
+          - value: radiotherapy
+            label: "局部放疗/全皮肤电子束"
+          - value: interferon
+            label: "干扰素"
+          - value: retinoid_systemic
+            label: "口服维A酸类/贝沙罗汀等"
+          - value: methotrexate
+            label: "甲氨蝶呤"
+          - value: hdac_inhibitor
+            label: "HDAC抑制剂"
+          - value: brentuximab
+            label: "维布妥昔单抗/Brentuximab vedotin"
+          - value: mogamulizumab
+            label: "Mogamulizumab"
+          - value: chemotherapy
+            label: "化疗"
+          - value: ecp
+            label: "体外光opheresis/ECP"
+          - value: traditional_or_complementary
+            label: "中医药或补充替代治疗"
+          - value: observation
+            label: "观察随访，暂未治疗"
+          - value: other
+            label: "其他"
+
+      - id: current_treatments
+        export_name: current_treatments
+        type: textarea
+        label: "目前正在使用的治疗"
+        required: false
+        help: "可简单写药名/光疗频率/治疗方案。不要填写医生或医院内部编号。"
+
+      - id: best_response_self_reported
+        export_name: best_response_self_reported
+        type: single_select
+        label: "总体来看，治疗后最好的效果接近哪一种？"
+        required: false
+        options:
+          - value: complete_or_near_complete
+            label: "完全或接近完全缓解"
+          - value: partial
+            label: "明显改善但仍有皮损"
+          - value: stable
+            label: "基本稳定"
+          - value: progression
+            label: "仍然进展"
+          - value: mixed_or_uncertain
+            label: "不同阶段不同/不确定"
+
+      - id: time_to_first_improvement
+        export_name: time_to_first_improvement
+        type: single_select
+        label: "开始有效治疗后，大约多久第一次感觉皮损或症状明显好转？"
+        required: false
+        options:
+          - value: within_1_month
+            label: "1个月内"
+          - value: 1_3_months
+            label: "1-3个月"
+          - value: 3_6_months
+            label: "3-6个月"
+          - value: over_6_months
+            label: "超过6个月"
+          - value: no_clear_improvement
+            label: "没有明显好转"
+          - value: not_treated
+            label: "尚未治疗/观察随访"
+          - value: unknown
+            label: "不确定/记不清"
+
+      - id: remission_duration_best
+        export_name: remission_duration_best
+        type: single_select
+        label: "病情最好的一段状态大约维持了多久？"
+        required: false
+        options:
+          - value: under_3_months
+            label: "不到3个月"
+          - value: 3_6_months
+            label: "3-6个月"
+          - value: 6_12_months
+            label: "6-12个月"
+          - value: 1_2_years
+            label: "1-2年"
+          - value: over_2_years
+            label: "超过2年"
+          - value: still_ongoing
+            label: "目前仍在维持"
+          - value: never_improved
+            label: "从未明显好转"
+          - value: unknown
+            label: "不确定/记不清"
+
+      - id: relapse_after_improvement
+        export_name: relapse_after_improvement
+        type: single_select
+        label: "明显好转后，是否出现过复发或反跳？"
+        required: false
+        options:
+          - value: "yes"
+            label: "是"
+          - value: "no"
+            label: "否"
+          - value: not_applicable
+            label: "不适用：尚未明显好转"
+          - value: unknown
+            label: "不确定"
+
+      - id: time_to_relapse_after_response
+        export_name: time_to_relapse_after_response
+        type: single_select
+        label: "如果复发或反跳，大约是在好转后多久发生？"
+        required: false
+        options:
+          - value: under_3_months
+            label: "不到3个月"
+          - value: 3_6_months
+            label: "3-6个月"
+          - value: 6_12_months
+            label: "6-12个月"
+          - value: 1_2_years
+            label: "1-2年"
+          - value: over_2_years
+            label: "超过2年"
+          - value: not_applicable
+            label: "不适用：没有复发/没有明显好转"
+          - value: unknown
+            label: "不确定/记不清"
+
+      - id: stopped_treatment_reasons
+        export_name: stopped_treatment_reasons
+        type: multiselect
+        label: "如果曾停止或更换治疗，主要原因是什么？"
+        required: false
+        options:
+          - value: ineffective
+            label: "效果不理想"
+          - value: relapse
+            label: "复发或反跳"
+          - value: adverse_effects
+            label: "副作用"
+          - value: access
+            label: "当地无法获得"
+          - value: doctor_recommendation
+            label: "医生建议调整"
+          - value: not_applicable
+            label: "不适用"
+
+  - id: patient_priorities
+    title: "您最希望研究回答什么"
+    description: |
+      最后一章留给患者自己的问题。医学研究很容易只看医生和论文关心的指标；
+      我们希望把患者真正关心的问题也记录下来。
+    why_we_ask: "开放问题能帮助后续设计更贴近患者需要的研究和随访模块。"
+    order: 80
+    questions:
+      - id: top_patient_questions
+        export_name: top_patient_questions
+        type: textarea
+        label: "作为患者，您最希望这项研究帮助回答什么问题？"
+        required: false
+
+      - id: followup_interest
+        export_name: followup_interest
+        type: single_select
+        label: "未来是否愿意参与每3个月一次的随访问卷？"
+        required: false
+        options:
+          - value: yes_anonymous_code
+            label: "愿意，用匿名编号回来填写"
+          - value: yes_contact_later
+            label: "愿意，但以后再考虑联系方式"
+          - value: "no"
+            label: "暂不愿意"
+          - value: unsure
+            label: "不确定"

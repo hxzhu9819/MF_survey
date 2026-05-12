@@ -1,0 +1,122 @@
+questionnaire:
+  id: mf_followup_3m
+  version: "2026.05.11-template"
+  language: zh-CN
+  title: "蕈样肉芽肿患者随访问卷"
+  description: "用于后续随访的短问卷草案。请不要填写真实姓名、身份证号、手机号、详细住址或医院内部编号。"
+  consent_version: "2026.05.11"
+
+modules:
+  - id: followup_status
+    title: "最近三个月情况"
+    description: |
+      这一章只问最近三个月发生的变化。记不清可以选择不确定。
+    why_we_ask: "随访最重要的是变化：症状是否加重、治疗是否调整、是否有新的检查或分期信息。"
+    order: 10
+    questions:
+      - id: followup_interval_confirmed
+        export_name: followup_interval_confirmed
+        type: single_select
+        label: "这次填写大约距离上次问卷多久？"
+        required: false
+        options:
+          - value: under_3m
+            label: "不到3个月"
+          - value: about_3m
+            label: "约3个月"
+          - value: 3_6m
+            label: "3-6个月"
+          - value: over_6m
+            label: "超过6个月"
+          - value: unknown
+            label: "不确定"
+
+      - id: global_change_since_last
+        export_name: global_change_since_last
+        type: single_select
+        label: "和上次填写相比，整体病情更接近哪一种？"
+        required: false
+        options:
+          - value: much_better
+            label: "明显好转"
+          - value: slightly_better
+            label: "有些好转"
+          - value: stable
+            label: "基本稳定"
+          - value: slightly_worse
+            label: "有些加重"
+          - value: much_worse
+            label: "明显加重"
+          - value: unknown
+            label: "不确定"
+
+  - id: followup_skin_symptoms
+    title: "当前皮肤和症状"
+    description: |
+      请填写最近一周的情况。粗略估计就可以。
+    why_we_ask: "同一位患者随时间变化的数据，对理解复发、治疗反应和生活质量很有价值。"
+    order: 20
+    questions:
+      - id: followup_current_bsa_percent
+        export_name: followup_current_bsa_percent
+        type: body_area_percent
+        label: "目前皮损大约占全身皮肤面积百分比"
+        required: false
+
+      - id: followup_itch_nrs
+        export_name: followup_itch_nrs
+        type: slider_nrs_0_10
+        label: "过去7天平均瘙痒程度"
+        anchors:
+          low: "0 = 完全不痒"
+          high: "10 = 最严重瘙痒"
+        required: false
+
+      - id: followup_sleep_disturbance_nrs
+        export_name: followup_sleep_disturbance_nrs
+        type: slider_nrs_0_10
+        label: "过去7天皮肤问题影响睡眠的程度"
+        anchors:
+          low: "0 = 不影响"
+          high: "10 = 严重影响"
+        required: false
+
+  - id: followup_treatment_changes
+    title: "治疗和检查变化"
+    description: |
+      请记录上次填写后是否有新的治疗、检查或分期信息。
+    why_we_ask: "治疗变化和检查变化能帮助研究真实世界治疗路径。"
+    order: 30
+    questions:
+      - id: followup_treatment_changed
+        export_name: followup_treatment_changed
+        type: single_select
+        label: "上次填写后，治疗方案是否有变化？"
+        required: false
+        options:
+          - value: "yes"
+            label: "有变化"
+          - value: "no"
+            label: "没有变化"
+          - value: unknown
+            label: "不确定"
+
+      - id: followup_current_treatments
+        export_name: followup_current_treatments
+        type: textarea
+        label: "目前正在使用的治疗"
+        required: false
+        help: "可简单写药名/光疗频率/治疗方案。不要填写医生或医院内部编号。"
+
+      - id: followup_new_stage_info
+        export_name: followup_new_stage_info
+        type: single_select
+        label: "上次填写后，医生是否更新过分期或病情评估？"
+        required: false
+        options:
+          - value: "yes"
+            label: "有"
+          - value: "no"
+            label: "没有"
+          - value: unknown
+            label: "不确定"

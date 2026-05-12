@@ -1,0 +1,1429 @@
+from __future__ import annotations
+
+import html
+import os
+from pathlib import Path
+
+import streamlit as st
+
+from mf_registry.db import (
+    connect,
+    count_submissions,
+    export_rows,
+    find_participant_by_retrieval_key,
+    init_db,
+    save_submission,
+)
+from mf_registry.export import dataframe_to_csv_bytes, rows_to_dataframe
+from mf_registry.identity import FollowupIdentityInput, using_local_pepper
+from mf_registry.questionnaire_schema import load_questionnaire
+from mf_registry.renderer_streamlit import completion_percent, render_questionnaire_wizard
+
+
+QUESTIONNAIRE_PATH = Path("questionnaires/mf_baseline_2026_05_11.yaml")
+
+
+st.set_page_config(
+    page_title="MF患者共研计划",
+    page_icon="MF",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+
+@st.cache_data(show_spinner=False)
+def cached_questionnaire(path: str, mtime: float):
+    return load_questionnaire(path)
+
+
+def main() -> None:
+    configure_runtime_secrets()
+    inject_style()
+    bundle = cached_questionnaire(str(QUESTIONNAIRE_PATH), QUESTIONNAIRE_PATH.stat().st_mtime)
+    connection = connect()
+    init_db(connection)
+    requested_page = page_from_query()
+    page_labels = ["项目首页", "资料库", "填写问卷", "找回随访编号", "研究者导出"]
+    page = requested_page if requested_page in page_labels else "项目首页"
+    apply_step_from_query()
+
+    render_top_nav(page, bundle.version, count_submissions(connection))
+
+    if page == "项目首页":
+        render_landing(bundle)
+    elif page == "资料库":
+        render_resources()
+    elif page == "填写问卷":
+        render_survey(bundle, connection)
+    elif page == "找回随访编号":
+        render_retrieval(connection)
+    else:
+        render_admin(connection)
+
+
+def configure_runtime_secrets() -> None:
+    for name in ("MF_REGISTRY_IDENTITY_PEPPER", "MF_REGISTRY_ADMIN_PASSWORD", "MF_REGISTRY_SQLITE_PATH"):
+        value = read_secret(name)
+        if value and not os.getenv(name):
+            os.environ[name] = str(value)
+
+
+def read_secret(name: str, default: str | None = None) -> str | None:
+    try:
+        value = st.secrets.get(name, default)
+    except Exception:
+        return default
+    return str(value) if value is not None else default
+
+
+def page_from_query() -> str:
+    page_key = st.query_params.get("page", "")
+    return {
+        "home": "项目首页",
+        "resources": "资料库",
+        "survey": "填写问卷",
+        "retrieve": "找回随访编号",
+        "admin": "研究者导出",
+    }.get(page_key, "项目首页")
+
+
+def apply_step_from_query() -> None:
+    if st.query_params.get("page") != "survey":
+        return
+    step_value = st.query_params.get("step")
+    if step_value is None:
+        return
+    try:
+        st.session_state["survey_step"] = max(int(step_value), 0)
+        del st.query_params["step"]
+    except ValueError:
+        return
+
+
+def render_top_nav(current_page: str, version: str, submission_count: int) -> None:
+    nav_items = [
+        ("首页", "home", "项目首页", "nav_home"),
+        ("资料库", "resources", "资料库", "nav_resources"),
+        ("填写问卷", "survey", "填写问卷", "nav_survey"),
+        ("找回编号", "retrieve", "找回随访编号", "nav_retrieve"),
+        ("研究者导出", "admin", "研究者导出", "nav_admin"),
+    ]
+    nav_forms = []
+    for label, key, page_name, button_key in nav_items:
+        active = " active" if current_page == page_name else ""
+        nav_forms.append(
+            f'<form action="/" method="get" target="_self">'
+            f'<button class="mf-nav-button{active}" type="submit" name="page" value="{key}">'
+            f'{html.escape(label)}'
+            f"</button></form>"
+        )
+    nav_html = (
+        '<nav class="mf-top-nav" aria-label="主导航">'
+        '<a class="mf-nav-brand" href="/?page=home" target="_self"><span>MF</span><strong>患者共研</strong></a>'
+        f'<div class="mf-nav-links">{"".join(nav_forms)}</div>'
+        f'<div class="mf-nav-meta">v{html.escape(version)} · {submission_count} 份</div>'
+        "</nav>"
+    )
+    st.markdown(nav_html, unsafe_allow_html=True)
+
+
+def inject_style() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --mf-ink: #24313a;
+            --mf-muted: #60717a;
+            --mf-line: #d9e5df;
+            --mf-soft: #f6faf7;
+            --mf-mint: #dff2e7;
+            --mf-teal: #2f7d68;
+            --mf-blue: #4f6f9f;
+            --mf-coral: #b65f4a;
+            --mf-warm: #fff8ef;
+            --mf-paper: #fffdf7;
+            --mf-shadow: 0 18px 44px rgba(47, 83, 77, 0.08);
+            --mf-photo:
+                radial-gradient(circle at 78% 28%, rgba(223, 242, 231, 0.9) 0 15%, transparent 31%),
+                radial-gradient(circle at 88% 62%, rgba(255, 248, 239, 0.96) 0 18%, transparent 34%),
+                linear-gradient(130deg, rgba(245, 250, 246, 0.95), rgba(238, 247, 241, 0.74) 46%, rgba(248, 244, 232, 0.9));
+        }
+        html {
+            scroll-behavior: smooth;
+        }
+        body, .stApp {
+            background:
+                linear-gradient(115deg, rgba(223, 242, 231, 0.56), transparent 34rem),
+                linear-gradient(180deg, #fbfcf8 0%, #f3f8f3 100%);
+            color: var(--mf-ink);
+            font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        }
+        header[data-testid="stHeader"] {
+            display: none;
+        }
+        #MainMenu, footer {
+            visibility: hidden;
+        }
+        .block-container {
+            max-width: 1120px;
+            padding-top: 0.75rem;
+            padding-bottom: 4rem;
+        }
+        h1, h2, h3 {
+            color: var(--mf-ink);
+            letter-spacing: 0 !important;
+            font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Iowan Old Style", Georgia, serif;
+        }
+        p, li, label, span {
+            letter-spacing: 0 !important;
+        }
+        section[data-testid="stSidebar"] {
+            display: none !important;
+            width: 0 !important;
+        }
+        div[data-testid="stSidebarCollapsedControl"] {
+            display: none !important;
+        }
+        div[data-testid="stSidebarContent"] {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            color: var(--mf-muted);
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0.4rem;
+            border-bottom: 1px solid var(--mf-line);
+            overflow-x: auto;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            padding: 0.62rem 0.92rem;
+            background: #f4f7f6;
+            border: 1px solid transparent;
+            color: var(--mf-muted);
+            white-space: nowrap;
+        }
+        .stTabs [aria-selected="true"] {
+            background: #ffffff;
+            border-color: var(--mf-line);
+            border-bottom-color: #ffffff;
+            color: var(--mf-teal);
+            font-weight: 650;
+        }
+        div[data-testid="stForm"] {
+            border: 0;
+            padding: 0;
+        }
+        div[data-testid="stExpander"] {
+            border-color: rgba(217, 229, 223, 0.92);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: 0 12px 34px rgba(47, 83, 77, 0.04);
+        }
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background: rgba(255, 255, 255, 0.82);
+            border-color: var(--mf-line);
+            border-radius: 8px;
+            box-shadow: var(--mf-shadow);
+        }
+        div[data-testid="stAlert"] {
+            border-radius: 8px;
+        }
+        .stButton > button, .stDownloadButton > button {
+            border-radius: 8px;
+            min-height: 2.75rem;
+            font-weight: 650;
+            box-shadow: none;
+        }
+        .mf-top-nav {
+            width: 100%;
+            min-height: 3.45rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.35rem 0 0.7rem 0;
+            margin: 0 0 0.85rem 0;
+            position: relative;
+            z-index: 20;
+            background: transparent;
+            border-bottom: 1px solid rgba(217, 229, 223, 0.86);
+        }
+        .mf-nav-brand {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            color: var(--mf-ink);
+            text-decoration: none !important;
+            letter-spacing: 0 !important;
+            white-space: nowrap;
+        }
+        .mf-nav-brand span {
+            font-family: "Iowan Old Style", Georgia, serif;
+            font-size: 1.15rem;
+            font-weight: 850;
+            color: var(--mf-teal);
+        }
+        .mf-nav-brand strong {
+            font-size: 0.98rem;
+            font-weight: 800;
+            color: var(--mf-ink);
+        }
+        .mf-nav-links {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1.15rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .mf-nav-links::-webkit-scrollbar {
+            display: none;
+        }
+        .mf-nav-links form {
+            margin: 0;
+            padding: 0;
+        }
+        .mf-nav-button {
+            appearance: none;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            color: var(--mf-muted) !important;
+            padding: 0.42rem 0 0.48rem 0;
+            font-size: 0.94rem;
+            font-weight: 650;
+            white-space: nowrap;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+        }
+        .mf-nav-button:hover {
+            color: var(--mf-teal) !important;
+            transform: translateY(-1px);
+        }
+        .mf-nav-button.active {
+            color: var(--mf-teal) !important;
+            border-bottom-color: var(--mf-teal);
+        }
+        .mf-nav-meta {
+            color: var(--mf-muted);
+            font-size: 0.86rem;
+            white-space: nowrap;
+            text-align: right;
+            opacity: 0.9;
+        }
+        .mf-sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        .stTextInput input, .stTextArea textarea, .stNumberInput input {
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.92);
+        }
+        .mf-landing-hero {
+            min-height: min(62vh, 32rem);
+            width: 100%;
+            margin-left: 0;
+            margin-top: 0;
+            padding: clamp(2rem, 5vw, 5.25rem);
+            display: flex;
+            align-items: flex-start;
+            position: relative;
+            overflow: hidden;
+            background:
+                linear-gradient(90deg, rgba(255, 253, 247, 0.97) 0%, rgba(255, 253, 247, 0.9) 43%, rgba(255, 253, 247, 0.16) 76%),
+                linear-gradient(115deg, rgba(223, 242, 231, 0.72), rgba(255, 248, 239, 0.15) 50%, rgba(79, 111, 159, 0.12)),
+                var(--mf-photo);
+            background-size: cover;
+            background-position: center center;
+            isolation: isolate;
+            animation: mf-photo-breathe 20s ease-in-out infinite alternate;
+        }
+        .mf-landing-hero::after {
+            content: "";
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 34%;
+            background: linear-gradient(0deg, rgba(251,252,248,1), rgba(251,252,248,0));
+            z-index: -1;
+        }
+        .mf-landing-hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(47, 125, 104, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(47, 125, 104, 0.04) 1px, transparent 1px),
+                linear-gradient(130deg, transparent 51%, rgba(47, 125, 104, 0.1) 51.2%, transparent 51.6%),
+                linear-gradient(132deg, transparent 60%, rgba(79, 111, 159, 0.08) 60.2%, transparent 60.7%),
+                linear-gradient(126deg, transparent 70%, rgba(182, 95, 74, 0.055) 70.2%, transparent 70.6%);
+            background-size: 34px 34px, 34px 34px, 100% 100%, 100% 100%, 100% 100%;
+            mask-image: linear-gradient(90deg, rgba(0,0,0,0.75), rgba(0,0,0,0.25), transparent 68%);
+            pointer-events: none;
+            z-index: -1;
+        }
+        .mf-hero-copy {
+            max-width: 42rem;
+            color: var(--mf-ink);
+            margin-top: clamp(3rem, 11vh, 6.5rem);
+            animation: mf-rise-in 780ms ease-out both;
+        }
+        .mf-brand {
+            margin: 0 0 1rem 0;
+            color: var(--mf-ink);
+            font-size: clamp(3.25rem, 7.6vw, 6.2rem);
+            line-height: 1.02;
+            font-weight: 800;
+            text-wrap: balance;
+            text-shadow: none;
+        }
+        .mf-hero-copy p {
+            max-width: 34rem;
+            margin: 0 0 1.6rem 0;
+            color: #4b5f5a;
+            font-size: clamp(1rem, 1.8vw, 1.22rem);
+            line-height: 1.85;
+        }
+        .mf-hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.9rem;
+            align-items: center;
+        }
+        .mf-cta-primary, .mf-cta-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 3rem;
+            padding: 0 1.15rem;
+            border-radius: 8px;
+            text-decoration: none !important;
+            font-weight: 750;
+            border: 0;
+            cursor: pointer;
+            transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+        }
+        .mf-cta-primary {
+            background: var(--mf-teal);
+            color: #fffaf1 !important;
+            box-shadow: 0 14px 32px rgba(47, 125, 104, 0.18);
+        }
+        .mf-cta-secondary {
+            border: 1px solid rgba(47, 125, 104, 0.28);
+            color: var(--mf-teal) !important;
+            background: rgba(255, 253, 247, 0.76);
+        }
+        .mf-cta-primary:hover, .mf-cta-secondary:hover {
+            transform: translateY(-2px);
+        }
+        .mf-below {
+            padding-top: 1.2rem;
+        }
+        .mf-section {
+            padding: 2.2rem 0 3rem 0;
+            border-bottom: 1px solid var(--mf-line);
+        }
+        .mf-section h2 {
+            font-size: clamp(1.8rem, 3vw, 2.6rem);
+            margin: 0 0 0.8rem 0;
+        }
+        .mf-section p {
+            color: var(--mf-muted);
+            line-height: 1.82;
+            font-size: 1.02rem;
+            margin: 0;
+            max-width: 44rem;
+        }
+        .mf-resource-hero {
+            padding: 2.4rem 0 1.6rem 0;
+            border-bottom: 1px solid var(--mf-line);
+        }
+        .mf-resource-hero h1 {
+            margin: 0 0 0.8rem 0;
+            font-size: clamp(2.6rem, 5vw, 4.8rem);
+            line-height: 1.05;
+        }
+        .mf-resource-hero p {
+            color: var(--mf-muted);
+            font-size: 1.05rem;
+            line-height: 1.82;
+            max-width: 48rem;
+            margin: 0;
+        }
+        .mf-resource-section {
+            padding: 2.1rem 0;
+            border-bottom: 1px solid rgba(217, 229, 223, 0.86);
+        }
+        .mf-resource-section h2 {
+            font-size: clamp(1.6rem, 2.5vw, 2.25rem);
+            margin: 0 0 0.5rem 0;
+        }
+        .mf-resource-section > p {
+            color: var(--mf-muted);
+            line-height: 1.75;
+            max-width: 50rem;
+        }
+        .mf-resource-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+            margin-top: 1.2rem;
+        }
+        .mf-resource-item {
+            border-top: 2px solid rgba(47, 125, 104, 0.24);
+            padding: 0.85rem 0 0 0;
+        }
+        .mf-resource-item strong {
+            display: block;
+            color: var(--mf-ink);
+            margin-bottom: 0.35rem;
+        }
+        .mf-resource-item span,
+        .mf-resource-item li {
+            color: var(--mf-muted);
+            line-height: 1.66;
+        }
+        .mf-resource-list {
+            margin: 0.85rem 0 0 0;
+            padding-left: 1.15rem;
+            color: var(--mf-muted);
+            line-height: 1.76;
+        }
+        .mf-resource-links {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.8rem;
+            margin-top: 1.1rem;
+        }
+        .mf-resource-group {
+            margin-top: 1.65rem;
+        }
+        .mf-resource-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin: 0 0 0.2rem 0;
+            color: var(--mf-teal);
+            font-weight: 760;
+            font-size: 0.96rem;
+        }
+        .mf-resource-note {
+            margin: 0;
+            color: var(--mf-muted);
+            line-height: 1.68;
+            max-width: 54rem;
+        }
+        .mf-resource-link {
+            border: 1px solid rgba(217, 229, 223, 0.96);
+            border-radius: 8px;
+            padding: 0.9rem 1rem;
+            background: rgba(255, 255, 255, 0.78);
+            text-decoration: none !important;
+            transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+        }
+        .mf-resource-link:hover {
+            transform: translateY(-1px);
+            border-color: rgba(47, 125, 104, 0.4);
+            box-shadow: 0 10px 24px rgba(47, 83, 77, 0.06);
+        }
+        .mf-resource-link strong {
+            display: block;
+            color: var(--mf-teal);
+            margin-bottom: 0.25rem;
+        }
+        .mf-resource-link small {
+            display: block;
+            color: var(--mf-coral);
+            font-weight: 700;
+            margin-bottom: 0.3rem;
+        }
+        .mf-resource-link span {
+            color: var(--mf-muted);
+            line-height: 1.55;
+            font-size: 0.94rem;
+        }
+        .mf-resource-callout {
+            margin-top: 1rem;
+            border: 1px solid rgba(182, 95, 74, 0.2);
+            border-radius: 8px;
+            padding: 0.95rem 1rem;
+            background: linear-gradient(180deg, #fff9f5 0%, #fff4ee 100%);
+            color: #684335;
+            line-height: 1.72;
+        }
+        .mf-three-col {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        .mf-plain-item {
+            padding-top: 1rem;
+            border-top: 2px solid var(--mf-line);
+        }
+        .mf-plain-item strong {
+            display: block;
+            margin-bottom: 0.45rem;
+            color: var(--mf-ink);
+        }
+        .mf-plain-item span {
+            color: var(--mf-muted);
+            line-height: 1.7;
+        }
+        .mf-panel {
+            border: 1px solid var(--mf-line);
+            border-radius: 8px;
+            padding: 1.2rem 1.25rem;
+            background: #ffffff;
+            height: 100%;
+        }
+        .mf-panel strong {
+            color: var(--mf-ink);
+        }
+        .mf-panel p {
+            color: var(--mf-muted);
+            line-height: 1.68;
+            margin: 0.4rem 0 0 0;
+        }
+        .mf-intro {
+            border: 1px solid var(--mf-line);
+            border-left: 5px solid var(--mf-teal);
+            border-radius: 8px;
+            padding: 1rem 1.1rem;
+            background: linear-gradient(180deg, #fbfefb 0%, #f5faf6 100%);
+            margin-bottom: 1rem;
+        }
+        .mf-intro-title {
+            color: var(--mf-ink);
+            font-weight: 750;
+            margin-bottom: 0.3rem;
+        }
+        .mf-intro-body {
+            color: var(--mf-muted);
+            line-height: 1.72;
+        }
+        .mf-why {
+            border: 1px solid rgba(79, 111, 159, 0.18);
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            background: linear-gradient(180deg, #f6f9ff 0%, #f3f7fc 100%);
+            color: #415773;
+            margin-bottom: 1rem;
+            line-height: 1.65;
+        }
+        .mf-privacy-note {
+            border: 1px solid rgba(182, 95, 74, 0.2);
+            border-radius: 8px;
+            padding: 0.95rem 1rem;
+            background: linear-gradient(180deg, #fff9f5 0%, #fff4ee 100%);
+            color: #684335;
+            line-height: 1.7;
+        }
+        .mf-small {
+            color: var(--mf-muted);
+            font-size: 0.92rem;
+            line-height: 1.65;
+        }
+        .mf-inline-note {
+            border: 1px solid rgba(79, 111, 159, 0.16);
+            border-radius: 8px;
+            padding: 0.82rem 0.95rem;
+            background: linear-gradient(180deg, #f6f9ff 0%, #eef6fb 100%);
+            color: #35566f;
+            line-height: 1.68;
+            margin: 1rem 0;
+        }
+        .mf-inline-note strong {
+            display: inline-block;
+            color: var(--mf-blue);
+            margin-right: 0.45rem;
+        }
+        .mf-inline-note span {
+            color: #35566f;
+        }
+        .mf-tnmb-board {
+            border: 1px solid rgba(79, 111, 159, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0 0.35rem 0;
+            background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+            box-shadow: 0 12px 32px rgba(47, 83, 77, 0.05);
+        }
+        .mf-tnmb-title {
+            color: var(--mf-ink);
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+        }
+        .mf-tnmb-note {
+            color: var(--mf-muted);
+            font-size: 0.9rem;
+            line-height: 1.55;
+            margin-bottom: 0.85rem;
+        }
+        .mf-tnmb-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.7rem;
+        }
+        .mf-tnmb-grid div {
+            border-top: 2px solid rgba(79, 111, 159, 0.22);
+            padding-top: 0.55rem;
+            min-height: 4.2rem;
+        }
+        .mf-tnmb-grid strong {
+            display: block;
+            color: var(--mf-blue);
+            font-size: 1.05rem;
+            margin-bottom: 0.25rem;
+        }
+        .mf-tnmb-grid span {
+            color: var(--mf-ink);
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+        .mf-tnmb-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 0.85rem;
+            color: #415773;
+            font-weight: 650;
+        }
+        .mf-tnmb-summary span {
+            border: 1px solid rgba(79, 111, 159, 0.18);
+            border-radius: 999px;
+            padding: 0.28rem 0.65rem;
+            background: rgba(255, 255, 255, 0.72);
+        }
+        .mf-tnmb-reference {
+            margin-top: 1rem;
+            border-top: 1px solid rgba(217, 229, 223, 0.9);
+            padding-top: 0.95rem;
+        }
+        .mf-tnmb-reference-title {
+            color: var(--mf-ink);
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+        }
+        .mf-tnmb-reference-note {
+            color: var(--mf-muted);
+            font-size: 0.9rem;
+            line-height: 1.55;
+            margin-bottom: 0.8rem;
+        }
+        .mf-tnmb-ref-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+        .mf-tnmb-ref-grid div {
+            border: 1px solid rgba(217, 229, 223, 0.85);
+            border-radius: 8px;
+            padding: 0.7rem 0.8rem;
+            background: rgba(255, 255, 255, 0.72);
+        }
+        .mf-tnmb-ref-grid strong {
+            display: block;
+            color: var(--mf-blue);
+            margin-bottom: 0.28rem;
+        }
+        .mf-tnmb-ref-grid span {
+            color: var(--mf-muted);
+            font-size: 0.88rem;
+            line-height: 1.52;
+        }
+        .mf-level-map {
+            display: grid;
+            grid-template-columns: repeat(9, minmax(112px, 1fr));
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding: 0.2rem 0 0.8rem 0;
+            margin-bottom: 0.6rem;
+        }
+        .mf-level-form {
+            margin: 0;
+            padding: 0;
+        }
+        .mf-level-fill {
+            width: 100%;
+            min-height: 4.7rem;
+            border: 1px solid var(--mf-line);
+            border-radius: 8px;
+            padding: 0.62rem 0.62rem;
+            text-align: left;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.78);
+            transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+        }
+        .mf-level-fill::before {
+            content: "";
+            position: absolute;
+            inset: auto 0 0 0;
+            height: var(--fill);
+            background:
+                linear-gradient(180deg, rgba(47, 125, 104, 0.12), rgba(47, 125, 104, 0.34));
+            border-top: 1px solid rgba(47, 125, 104, 0.18);
+            transition: height 220ms ease;
+            z-index: 0;
+        }
+        .mf-level-fill:hover {
+            transform: translateY(-2px);
+            border-color: rgba(47, 125, 104, 0.42);
+            box-shadow: 0 10px 24px rgba(47, 83, 77, 0.08);
+        }
+        .mf-level-fill.current {
+            border-color: rgba(47, 125, 104, 0.62);
+            box-shadow: inset 0 0 0 1px rgba(47, 125, 104, 0.2);
+        }
+        .mf-level-fill.done::before {
+            background:
+                linear-gradient(180deg, rgba(47, 125, 104, 0.2), rgba(47, 125, 104, 0.52));
+        }
+        .mf-level-fill span {
+            display: inline-flex;
+            width: 1.45rem;
+            height: 1.45rem;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.76);
+            color: var(--mf-teal);
+            font-size: 0.78rem;
+            font-weight: 850;
+            margin-bottom: 0.34rem;
+            position: relative;
+            z-index: 1;
+        }
+        .mf-level-fill strong {
+            display: block;
+            color: var(--mf-ink);
+            font-size: 0.88rem;
+            white-space: nowrap;
+            position: relative;
+            z-index: 1;
+        }
+        .mf-level-fill em {
+            display: block;
+            margin-top: 0.25rem;
+            color: var(--mf-muted);
+            font-size: 0.78rem;
+            font-style: normal;
+            position: relative;
+            z-index: 1;
+        }
+        .mf-level {
+            border: 1px solid var(--mf-line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.66);
+            padding: 0.62rem 0.62rem;
+            min-height: 4.2rem;
+        }
+        .mf-level span {
+            display: inline-flex;
+            width: 1.45rem;
+            height: 1.45rem;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: #edf3ef;
+            color: var(--mf-muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            margin-bottom: 0.34rem;
+        }
+        .mf-level strong {
+            display: block;
+            color: var(--mf-ink);
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+        .mf-level em {
+            display: block;
+            margin-top: 0.25rem;
+            color: var(--mf-muted);
+            font-size: 0.78rem;
+            font-style: normal;
+        }
+        .mf-level.current {
+            border-color: rgba(47, 125, 104, 0.45);
+            background: #f4fbf7;
+            box-shadow: inset 0 0 0 1px rgba(47, 125, 104, 0.12);
+        }
+        .mf-level.current span,
+        .mf-level.done span {
+            background: var(--mf-teal);
+            color: #fffaf1;
+        }
+        .mf-level.done {
+            background: rgba(223, 242, 231, 0.55);
+        }
+        .mf-level-map-native-start + div {
+            overflow-x: auto;
+            flex-wrap: nowrap !important;
+            padding-bottom: 0.65rem;
+            margin-bottom: 0.15rem;
+        }
+        .mf-level-map-native-start + div [data-testid="column"] {
+            min-width: 118px;
+        }
+        .mf-level-map-native-start + div [data-testid="stButton"] > button {
+            min-height: 4.5rem;
+            white-space: pre-line;
+            font-size: 0.86rem;
+            line-height: 1.25;
+            padding: 0.5rem 0.45rem;
+            border-radius: 8px;
+            box-shadow: none;
+        }
+        [class*="st-key-level_map_"] button[data-testid^="stBaseButton"] {
+            min-height: 3.95rem;
+            white-space: pre-line;
+            font-size: 0.94rem;
+            line-height: 1.38;
+            padding: 0.62rem 0.7rem;
+            border-radius: 8px;
+            box-shadow: none;
+            color: var(--mf-ink);
+            border-color: rgba(217, 229, 223, 0.95);
+            transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+        }
+        [class*="st-key-level_map_"] button[data-testid^="stBaseButton"]:hover {
+            transform: translateY(-1px);
+            border-color: rgba(47, 125, 104, 0.42);
+            box-shadow: 0 10px 24px rgba(47, 83, 77, 0.07);
+        }
+        .mf-level-map-native-end {
+            height: 0.2rem;
+        }
+        .mf-question-head {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 0.65rem;
+            margin: 1.2rem 0 0.45rem 0;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(217, 229, 223, 0.66);
+        }
+        .mf-question-head span {
+            color: var(--mf-teal);
+            font-weight: 850;
+            font-size: 0.86rem;
+        }
+        .mf-question-head strong {
+            color: var(--mf-ink);
+            font-size: 1rem;
+            line-height: 1.45;
+        }
+        .mf-question-head em {
+            border: 1px solid var(--mf-line);
+            border-radius: 999px;
+            color: var(--mf-muted);
+            font-size: 0.78rem;
+            font-style: normal;
+            padding: 0.16rem 0.5rem;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.74);
+        }
+        @keyframes mf-photo-breathe {
+            from { background-position: center center; }
+            to { background-position: 52% center; }
+        }
+        @keyframes mf-rise-in {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @media (max-width: 760px) {
+            .block-container {
+                padding-top: 0.75rem;
+            }
+            .mf-top-nav {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 0.55rem;
+            }
+            .mf-nav-links {
+                width: 100%;
+                justify-content: flex-start;
+                gap: 1rem;
+            }
+            .mf-nav-meta {
+                text-align: left;
+            }
+            .mf-landing-hero {
+                min-height: 72vh;
+                margin-left: 0;
+                padding: 5rem 1.25rem 4rem;
+                background:
+                    linear-gradient(180deg, rgba(255, 250, 241, 0.94) 0%, rgba(255, 250, 241, 0.82) 52%, rgba(255, 250, 241, 0.24) 100%),
+                    var(--mf-photo);
+                background-size: cover;
+                background-position: 48% center;
+            }
+            .mf-brand {
+                font-size: 3.15rem;
+            }
+            .mf-hero-copy {
+                margin-top: 1.4rem;
+            }
+            .mf-hero-actions {
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .mf-three-col {
+                grid-template-columns: 1fr;
+                gap: 1.35rem;
+            }
+            .mf-resource-grid,
+            .mf-resource-links {
+                grid-template-columns: 1fr;
+            }
+            .mf-level-map {
+                grid-template-columns: repeat(9, 132px);
+            }
+            .mf-level-map-native-start + div [data-testid="column"] {
+                min-width: 132px;
+            }
+            .mf-question-head {
+                grid-template-columns: 1fr;
+                gap: 0.3rem;
+            }
+            .mf-question-head em {
+                width: fit-content;
+            }
+            .mf-tnmb-grid {
+                grid-template-columns: 1fr;
+            }
+            .mf-tnmb-ref-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_landing(bundle) -> None:
+    st.markdown(
+        """
+        <section class="mf-landing-hero">
+          <div class="mf-hero-copy">
+            <h1 class="mf-brand">MF 患者共研计划</h1>
+            <p>
+              用一份温和、可随访的问卷，把诊断前后的真实经历记录下来，
+              让蕈样肉芽肿研究更接近患者生活。
+            </p>
+            <form class="mf-hero-actions" action="/" method="get" target="_self">
+              <button class="mf-cta-primary" type="submit" name="page" value="survey">开始填写问卷</button>
+              <button class="mf-cta-secondary" type="submit" name="page" value="resources">先看资料库</button>
+              <button class="mf-cta-secondary" type="submit" name="page" value="retrieve">找回随访编号</button>
+            </form>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""
+        <main class="mf-below">
+          <section class="mf-section">
+            <h2>这份问卷只做一件事</h2>
+            <p>
+              把患者自己知道的诊断时间线、TNMB/mSWAT、瘙痒睡眠负担和治疗康复节奏，
+              按照可以分析、可以随访、可以被伦理审查的方式整理起来。
+              当前问卷版本为 {html.escape(bundle.version)}，用于 Beta 试用和问卷流程优化。
+            </p>
+          </section>
+          <section class="mf-section">
+            <h2>保护感比完成率更重要</h2>
+            <p>
+              请不要填写姓名、身份证号、手机号、详细住址、医院内部编号或报告原件。
+              长期随访身份完全自愿；如果开启，微信号只用于生成哈希身份，不进入研究导出表。
+            </p>
+            <div class="mf-three-col">
+              <div class="mf-plain-item"><strong>可以不确定</strong><span>记不清年月、看不懂报告，都可以选择不确定。</span></div>
+              <div class="mf-plain-item"><strong>可以跳过</strong><span>非必填题不会阻止提交，体验优先于逼迫。</span></div>
+              <div class="mf-plain-item"><strong>共同完善</strong><span>Beta 试用会帮助我们发现措辞、流程和数据结构里的问题。</span></div>
+            </div>
+          </section>
+        </main>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_resources() -> None:
+    st.markdown(
+        """
+        <section class="mf-resource-hero">
+          <h1>MF 患者资料库</h1>
+          <p>
+            这里整理常见问题、就诊准备、分期和治疗资料。它不是医疗建议，
+            也不能替代您的医生；它的作用是帮助您更安心地理解问卷、整理病情、准备复诊。
+          </p>
+        </section>
+
+        <section class="mf-resource-section">
+          <h2>先读这几件事</h2>
+          <div class="mf-resource-grid">
+            <div class="mf-resource-item">
+              <strong>MF 是皮肤 T 细胞淋巴瘤的一种</strong>
+              <span>它常表现为斑片、斑块、瘙痒、脱屑或结节，早期可能像湿疹、银屑病或副银屑病。</span>
+            </div>
+            <div class="mf-resource-item">
+              <strong>确诊慢并不少见</strong>
+              <span>很多患者需要反复就诊和多次皮肤活检。记不清时间不代表填错，可以选择“不确定”。</span>
+            </div>
+            <div class="mf-resource-item">
+              <strong>分期和 mSWAT 是两件事</strong>
+              <span>TNMB 用于临床分期；mSWAT 主要用于量化皮肤负担和随访变化。</span>
+            </div>
+            <div class="mf-resource-item">
+              <strong>很多信息需要医生确认</strong>
+              <span>N、M、B 分期通常需要查体、影像、病理或血液流式。自填估算只能帮助整理线索。</span>
+            </div>
+          </div>
+          <div class="mf-resource-callout">
+            如果出现快速增大的肿块、破溃感染、发热、明显淋巴结肿大、全身皮肤广泛发红脱屑、
+            或症状突然明显加重，请尽快联系医生或线下就医。
+          </div>
+        </section>
+
+        <section class="mf-resource-section">
+          <h2>填写问卷时常见问题</h2>
+          <ul class="mf-resource-list">
+            <li><strong>不知道年月怎么办？</strong> 选大概年月即可；完全记不清就选“不确定”。</li>
+            <li><strong>不确定自己是不是 MF？</strong> 可以按医生说法填写“怀疑/未确诊”，研究者会在分析时分层。</li>
+            <li><strong>医院名称要不要写？</strong> 当前 beta 不建议写医院全名或详细个人信息，填写医院层级和地区即可。</li>
+            <li><strong>活检次数怎么算？</strong> 大致计算为为了这次皮肤问题做过的皮肤活检次数，不需要精确。</li>
+            <li><strong>mSWAT 面积怎么估？</strong> 一个手掌加五指约等于 1% 全身皮肤面积，粗略估算即可。</li>
+            <li><strong>TNMB 不会填怎么办？</strong> 只填您知道的部分；N、M、B 不确定非常常见。</li>
+            <li><strong>提交后能修改吗？</strong> 当前 beta 暂不支持直接修改。发现明显错误可以重新提交，后续导出时会去重。</li>
+          </ul>
+        </section>
+
+        <section class="mf-resource-section">
+          <h2>下次就诊可以带上的清单</h2>
+          <div class="mf-resource-grid">
+            <div class="mf-resource-item">
+              <strong>时间线</strong>
+              <span>第一次发现皮肤异常、第一次看皮肤科、第一次活检、首次确诊、治疗开始和复发时间。</span>
+            </div>
+            <div class="mf-resource-item">
+              <strong>报告</strong>
+              <span>皮肤活检病理、免疫组化、TCR 克隆性、血常规、流式细胞术、影像、淋巴结活检。</span>
+            </div>
+            <div class="mf-resource-item">
+              <strong>照片</strong>
+              <span>同一光线和距离下记录皮损变化，尤其是新发结节、破溃或红皮病变化。</span>
+            </div>
+            <div class="mf-resource-item">
+              <strong>治疗表</strong>
+              <span>药名、剂量/频率、开始和停止时间、多久好转、是否复发、为什么换药。</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="mf-resource-section">
+          <h2>可以问医生的问题</h2>
+          <ul class="mf-resource-list">
+            <li>我的诊断是 MF、Sézary 综合征，还是其他 CTCL 亚型？是否有亲毛囊型、大细胞转化、CD30 阳性等特征？</li>
+            <li>我的 TNMB 分期分别是什么？T、N、M、B 哪些已经确认，哪些还需要检查？</li>
+            <li>我目前的 mSWAT 或皮肤受累面积大约是多少？以后随访是否会重复记录？</li>
+            <li>是否需要复查皮肤活检、TCR、血液流式、LDH、影像或淋巴结评估？</li>
+            <li>当前治疗目标是什么：控制瘙痒、减少皮损、维持缓解，还是处理进展风险？</li>
+            <li>治疗多久通常能判断是否有效？什么情况下需要调整方案？</li>
+            <li>如果好转后复发，下一步通常如何处理？需要记录哪些复发信息？</li>
+            <li>哪些症状需要尽快联系医生，而不是等到下次复诊？</li>
+          </ul>
+        </section>
+
+        <section class="mf-resource-section">
+          <h2>可信资料入口</h2>
+          <p>优先阅读医学机构、专业组织、正式指南和登记平台资料。不同国家药物可及性、医保和临床试验不同，治疗选择仍需和本地医生讨论。</p>
+
+          <div class="mf-resource-group">
+            <div class="mf-resource-kicker">中文 · 中国大陆资料</div>
+            <p class="mf-resource-note">适合了解国内临床语境、指南/共识、就医路径和正在登记的研究。正式诊疗仍以医生和原始病历为准。</p>
+            <div class="mf-resource-links">
+              <a class="mf-resource-link" href="https://jrd.pumch.cn/article/doi/10.12376/j.issn.2097-0501.2023.02.008" target="_blank">
+                <small>专家指南</small>
+                <strong>中国蕈样肉芽肿诊疗及管理专家指南</strong>
+                <span>国内专家组整理的诊断、分期、治疗和长期管理建议，适合研究团队核对本土问卷术语。</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.pumch.cn/detail/13407.html" target="_blank">
+                <small>医院信息</small>
+                <strong>北京协和医院皮肤肿瘤门诊介绍</strong>
+                <span>帮助患者理解皮肤肿瘤/皮肤淋巴瘤相关专病门诊和就诊准备方向。</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.chinadrugtrials.org.cn/" target="_blank">
+                <small>官方登记平台</small>
+                <strong>国家药物临床试验登记与信息公示平台</strong>
+                <span>可检索“蕈样肉芽肿”“皮肤T细胞淋巴瘤”“CTCL”等关键词，查看国内药物临床试验登记。</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.chictr.org.cn/" target="_blank">
+                <small>研究登记</small>
+                <strong>中国临床试验注册中心 ChiCTR</strong>
+                <span>可检索观察性研究、真实世界研究和非药物干预研究登记，适合了解国内研究动态。</span>
+              </a>
+              <a class="mf-resource-link" href="https://m.dayi.org.cn/qa/01a12d9e312c43b18a9587647d58ec11" target="_blank">
+                <small>患者科普</small>
+                <strong>中国医学科学院健康科普：蕈样肉芽肿</strong>
+                <span>中文问答式科普，适合初次了解疾病名称、常见表现和就医方向。</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="mf-resource-group">
+            <div class="mf-resource-kicker">中文 · 国际机构中文版</div>
+            <p class="mf-resource-note">这些资料语言友好，但治疗可及性可能按国外语境书写；阅读时请和国内医生建议对照。</p>
+            <div class="mf-resource-links">
+              <a class="mf-resource-link" href="https://www.msdmanuals.cn/home/blood-disorders/lymphomas/cutaneous-t-cell-lymphomas" target="_blank">
+                <small>患者版</small>
+                <strong>MSD 手册：皮肤 T 细胞淋巴瘤</strong>
+                <span>用中文解释 CTCL、MF 和 Sézary 综合征的症状、诊断和治疗概念。</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.msdmanuals.cn/professional/hematology-and-oncology/lymphomas/cutaneous-t-cell-lymphomas-ctcl" target="_blank">
+                <small>专业版</small>
+                <strong>MSD 专业版：CTCL</strong>
+                <span>更偏医生视角，适合想核对检查、分型和治疗术语的患者或志愿者。</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="mf-resource-group">
+            <div class="mf-resource-kicker">English resources</div>
+            <p class="mf-resource-note">适合查 TNMB、mSWAT、国际患者组织资料和英文病历术语。英文内容不等于国内可直接获得同样治疗。</p>
+            <div class="mf-resource-links">
+              <a class="mf-resource-link" href="https://www.cancer.gov/types/lymphoma/patient/mycosis-fungoides-treatment-pdq" target="_blank">
+                <small>Patient guideline</small>
+                <strong>NCI Patient PDQ</strong>
+                <span>MF / Sézary syndrome diagnosis, staging, treatment options, and clinical trial overview.</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.clfoundation.org/mycosis-fungoides" target="_blank">
+                <small>Patient foundation</small>
+                <strong>Cutaneous Lymphoma Foundation：MF</strong>
+                <span>Patient-friendly explanations of MF, disease course, treatment, and living with cutaneous lymphoma.</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.clfoundation.org/modified-severity-weighted-assessment-tool-mswat" target="_blank">
+                <small>Assessment tool</small>
+                <strong>mSWAT explanation</strong>
+                <span>Explains how patch, plaque, and tumor body-surface areas are combined into an mSWAT score.</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.ncbi.nlm.nih.gov/books/NBK65849.2/table/CDR0000062881__216/?report=objectonly" target="_blank">
+                <small>TNMB table</small>
+                <strong>ISCL/EORTC TNMB classification</strong>
+                <span>Useful for checking the official T/N/M/B definitions used in MF and Sézary syndrome staging.</span>
+              </a>
+              <a class="mf-resource-link" href="https://dermnetnz.org/topics/mycosis-fungoides" target="_blank">
+                <small>Dermatology reference</small>
+                <strong>DermNet：Mycosis fungoides</strong>
+                <span>Dermatology-focused overview of clinical features, diagnosis, differential diagnosis, and treatment.</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.clfoundation.org/patient-resources-0" target="_blank">
+                <small>Support</small>
+                <strong>Patient support resources</strong>
+                <span>Patient organizations, glossaries, clinical trial resources, and community support links.</span>
+              </a>
+              <a class="mf-resource-link" href="https://www.lls.org/booklet/cutaneous-t-cell-lymphoma" target="_blank">
+                <small>Booklet</small>
+                <strong>LLS CTCL booklet</strong>
+                <span>A structured patient booklet for understanding cutaneous T-cell lymphoma and treatment choices.</span>
+              </a>
+              <a class="mf-resource-link" href="https://med.stanford.edu/cutaneouslymphoma/education/patient-resources.html" target="_blank">
+                <small>Academic center</small>
+                <strong>Stanford patient resources</strong>
+                <span>Lists reliable resources and reminds patients to be careful with unscreened online information.</span>
+              </a>
+            </div>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_survey(bundle, connection) -> None:
+    st.title(bundle.title)
+    description = bundle.body["questionnaire"].get("description")
+    if description:
+        st.caption(description)
+
+    with st.expander("参与说明", expanded=True):
+        st.markdown(
+            """
+            <div class="mf-privacy-note">
+              请把这份问卷当成一次患者共研的 Beta 试用，而不是医疗咨询。
+              任何让您不舒服、不确定或不想回答的问题，都可以先跳过。
+              这份问卷不会提供诊断或治疗建议。
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            - 这是一份患者共研问卷，不提供诊断或治疗建议。
+            - 除非您自愿选择长期随访身份，否则请不要填写任何可直接识别个人身份的信息。
+            - 长期随访身份目前仅支持微信号生成哈希；系统不保存明文微信号，也不会把微信号导出到研究表格。
+            - 您可以随时停止填写。
+            - 提交后，系统会保存您的匿名答案，用于完善问卷结构、导出和后续随访流程。
+            - Beta 试用阶段的数据会在分析时明确标记问卷版本和收集阶段。
+            """
+        )
+        consent = st.checkbox("我已阅读并同意参与本次问卷 Beta 试用", key="consent")
+
+    if not consent:
+        st.warning("请先阅读并勾选参与说明。")
+        return
+
+    followup_identity = render_followup_identity()
+
+    answers, submitted = render_questionnaire_wizard(bundle.body)
+
+    if submitted:
+        missing_required = find_missing_required(bundle.body, answers)
+        if missing_required:
+            st.error("以下必填问题尚未完成：" + "、".join(missing_required))
+            return
+
+        completion = completion_percent(bundle.body, answers)
+        saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
+        st.success("提交成功。请记录您的匿名编号。")
+        st.code(saved.public_code)
+        if saved.followup_public_key:
+            st.markdown("#### 长期随访身份")
+            st.write("这是可公开用于研究随访匹配的 public key：")
+            st.code(saved.followup_public_key)
+            if saved.retrieval_key:
+                st.write("这是只给您本人保存的 retrieval key。后续找回或随访问卷会用到它：")
+                st.code(saved.retrieval_key)
+                st.warning("请像保存密码一样保存 retrieval key。系统只保存它的哈希，无法替您查看原文。")
+            else:
+                st.info("检测到同一随访身份已存在，本次答案已关联到原有匿名参与者。")
+        else:
+            st.caption("您没有选择长期随访身份。本次提交仍会获得匿名编号。")
+
+
+def render_followup_identity() -> FollowupIdentityInput | None:
+    with st.container(border=True):
+        st.markdown("### 长期随访身份")
+        if using_local_pepper():
+            st.info("长期随访身份暂未开放。您仍然可以继续填写并匿名提交本次问卷。")
+            return None
+        st.markdown(
+            """
+            <div class="mf-intro">
+              <div class="mf-intro-title">这一部分完全自愿</div>
+              <div class="mf-intro-body">
+                如果您愿意未来每隔一段时间回来填写随访问卷，可以用微信号生成一个稳定的随访身份。
+                跳过不会影响本次问卷。系统会把微信号标准化后用服务端密钥做 HMAC 哈希，
+                只保存哈希和 public key；明文微信号不会保存，也不会出现在 CSV 导出中。
+              </div>
+            </div>
+            """
+            ,
+            unsafe_allow_html=True,
+        )
+        consent_to_followup = st.checkbox("我愿意使用微信号生成长期随访身份", key="followup_consent")
+        if not consent_to_followup:
+            return None
+        wechat_id = st.text_input(
+            "微信号",
+            key="followup_wechat",
+            help="建议填写微信号而不是昵称。系统不会保存明文，但请确认您理解这是可识别信息的哈希化处理。",
+        )
+        st.caption("提交后您会得到 public key 和 retrieval key。public key 可用于研究匹配；retrieval key 只给本人保存。")
+        if not wechat_id.strip():
+            st.info("如选择长期随访，请填写微信号；否则可以取消上方勾选。")
+            return None
+        return FollowupIdentityInput(
+            contact_type="wechat",
+            contact_value=wechat_id,
+            consent_to_followup=True,
+        )
+
+
+def render_retrieval(connection) -> None:
+    st.title("找回随访编号")
+    st.markdown(
+        """
+        如果您之前选择了长期随访，并保存了 retrieval key，可以在这里找回自己的匿名编号和 public key。
+        retrieval key 类似密码；系统不会显示您的微信号，也不会保存明文 retrieval key。
+        """
+    )
+    retrieval_key = st.text_input("Retrieval key", type="password")
+    if st.button("查找", type="primary"):
+        if not retrieval_key.strip():
+            st.warning("请先输入 retrieval key。")
+            return
+        row = find_participant_by_retrieval_key(connection, retrieval_key)
+        if not row:
+            st.error("没有找到对应记录。请检查 retrieval key 是否完整。")
+            return
+        st.success("已找到您的随访身份。")
+        st.write("匿名编号：")
+        st.code(row["public_code"])
+        st.write("Public key：")
+        st.code(row["public_key"])
+
+
+def render_admin(connection) -> None:
+    st.title("研究者导出")
+    admin_password = os.getenv("MF_REGISTRY_ADMIN_PASSWORD")
+    if not admin_password:
+        st.warning("研究者导出暂未开放。请先配置 MF_REGISTRY_ADMIN_PASSWORD。")
+        return
+    entered = st.text_input("研究者密码", type="password")
+    if entered != admin_password:
+        st.info("请输入研究者密码后查看导出。")
+        return
+
+    rows = export_rows(connection)
+    dataframe = rows_to_dataframe(rows)
+    st.metric("已提交问卷", len(dataframe))
+
+    if dataframe.empty:
+        st.info("目前还没有可导出的提交。")
+        return
+
+    st.dataframe(dataframe, width="stretch", hide_index=True)
+    st.download_button(
+        "下载 CSV",
+        data=dataframe_to_csv_bytes(dataframe),
+        file_name="mf_registry_export.csv",
+        mime="text/csv",
+    )
+
+
+def find_missing_required(body: dict, answers: dict) -> list[str]:
+    missing: list[str] = []
+    for module in body.get("modules", []):
+        for question in module.get("questions", []):
+            if not question.get("required"):
+                continue
+            value = answers.get(question["id"])
+            if value in (None, "", []):
+                missing.append(question["label"])
+            elif question["type"] == "boolean" and value is not True:
+                missing.append(question["label"])
+    return missing
+
+
+if __name__ == "__main__":
+    main()
