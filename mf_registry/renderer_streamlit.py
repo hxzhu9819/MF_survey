@@ -12,6 +12,26 @@ from mf_registry.regions import REGIONS
 
 ANSWER_STATE_KEY = "survey_answers"
 STEP_STATE_KEY = "survey_step"
+MISDIAGNOSIS_OPTIONS = [
+    ("parapsoriasis", "副银屑病/副银"),
+    ("eczema", "湿疹/皮炎"),
+    ("psoriasis", "银屑病"),
+    ("tinea", "真菌感染/癣"),
+    ("allergy", "过敏"),
+    ("vitiligo_or_pigment", "白癜风或色素异常"),
+    ("folliculitis", "毛囊炎"),
+    ("drug_eruption", "药疹"),
+    ("other", "其他"),
+    ("unknown", "不确定"),
+]
+HOSPITAL_LEVEL_OPTIONS = [
+    ("tertiary", "三级医院/大型综合医院"),
+    ("dermatology_specialty", "皮肤专科医院"),
+    ("secondary", "二级医院"),
+    ("primary_or_clinic", "基层医院/诊所"),
+    ("online", "线上问诊"),
+    ("unknown", "不确定"),
+]
 
 
 def render_questionnaire_wizard(body: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -245,6 +265,132 @@ def value_from_option_label(question: dict[str, Any], selected: Any) -> str | No
     return None
 
 
+def restore_question_state(question: dict[str, Any], key: str, answers: dict[str, Any]) -> None:
+    question_id = question["id"]
+    if question_id not in answers:
+        return
+
+    value = answers.get(question_id)
+    question_type = question["type"]
+
+    if question_type in {"text", "textarea"}:
+        set_state_if_absent(key, value or "")
+        return
+
+    if question_type in {"integer", "decimal"}:
+        if value is None:
+            if question.get("allow_unknown"):
+                set_state_if_absent(f"{key}_unknown", True)
+            return
+        set_state_if_absent(key, value)
+        return
+
+    if question_type == "year":
+        if value is None:
+            if question.get("allow_unknown"):
+                set_state_if_absent(f"{key}_unknown", True)
+            return
+        set_state_if_absent(key, int(value))
+        return
+
+    if question_type == "month":
+        if value is None:
+            if question.get("allow_unknown"):
+                set_state_if_absent(f"{key}_unknown", True)
+            return
+        try:
+            year, month = [int(part) for part in str(value).split("-")]
+        except ValueError:
+            return
+        set_state_if_absent(f"{key}_year", year)
+        set_state_if_absent(f"{key}_month", month)
+        return
+
+    if question_type == "date":
+        if value:
+            try:
+                set_state_if_absent(key, date.fromisoformat(str(value)))
+            except ValueError:
+                return
+        return
+
+    if question_type == "single_select":
+        restored = value_from_option_label(question, value)
+        if restored is not None:
+            set_state_if_absent(key, restored)
+        return
+
+    if question_type == "multiselect":
+        if not isinstance(value, list):
+            return
+        labels_by_value = {option["value"]: option["label"] for option in question["options"]}
+        valid_labels = set(labels_by_value.values())
+        selected_labels = [labels_by_value[item] for item in value if item in labels_by_value]
+        selected_labels.extend(item for item in value if item in valid_labels and item not in selected_labels)
+        set_state_if_absent(key, selected_labels)
+        return
+
+    if question_type == "boolean":
+        if value is not None:
+            set_state_if_absent(key, bool(value))
+        return
+
+    if question_type in {"slider_nrs_0_10", "body_area_percent"}:
+        if value is None:
+            if not question.get("required"):
+                set_state_if_absent(f"{key}_skip", True)
+            return
+        set_state_if_absent(key, int(value))
+        return
+
+    if question_type == "region_select":
+        if isinstance(value, dict):
+            set_state_if_absent(f"{key}_province", value.get("province"))
+            set_state_if_absent(f"{key}_city", value.get("city"))
+        return
+
+    if question_type == "repeatable_misdiagnosis":
+        restore_repeatable_misdiagnosis_state(key, value)
+
+
+def restore_repeatable_misdiagnosis_state(key: str, value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    count_key = f"{key}_count"
+    set_state_if_absent(count_key, len(value))
+    hospital_label_by_value = dict(HOSPITAL_LEVEL_OPTIONS)
+    disease_label_by_value = dict(MISDIAGNOSIS_OPTIONS)
+    for index, event in enumerate(value):
+        if not isinstance(event, dict):
+            continue
+        visit_month = event.get("visit_month")
+        if visit_month:
+            try:
+                year, month = [int(part) for part in str(visit_month).split("-")]
+            except ValueError:
+                year = month = None
+            set_state_if_absent(f"{key}_{index}_year", year)
+            set_state_if_absent(f"{key}_{index}_month", month)
+        region = event.get("care_region")
+        if isinstance(region, dict):
+            set_state_if_absent(f"{key}_{index}_region_province", region.get("province"))
+            set_state_if_absent(f"{key}_{index}_region_city", region.get("city"))
+        set_state_if_absent(
+            f"{key}_{index}_hospital_level",
+            hospital_label_by_value.get(event.get("hospital_level")),
+        )
+        set_state_if_absent(
+            f"{key}_{index}_disease",
+            disease_label_by_value.get(event.get("misdiagnosis")),
+        )
+        set_state_if_absent(f"{key}_{index}_disease_other", event.get("misdiagnosis_other") or "")
+
+
+def set_state_if_absent(key: str, value: Any) -> None:
+    if value is not None and key not in st.session_state:
+        st.session_state[key] = value
+
+
 def render_level_map(
     modules: list[dict[str, Any]],
     current_step: int,
@@ -398,6 +544,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
         render_info_text(label)
         return None
 
+    restore_question_state(question, key, st.session_state.get(ANSWER_STATE_KEY, {}))
     render_question_header(question, index)
 
     if question_type == "text":
@@ -576,27 +723,6 @@ def render_repeatable_misdiagnosis(question: dict[str, Any], key: str) -> list[d
         st.caption("如果没有误诊经历，或暂时不想填写，可以直接进入下一关。")
         return events
 
-    disease_options = [
-        ("parapsoriasis", "副银屑病/副银"),
-        ("eczema", "湿疹/皮炎"),
-        ("psoriasis", "银屑病"),
-        ("tinea", "真菌感染/癣"),
-        ("allergy", "过敏"),
-        ("vitiligo_or_pigment", "白癜风或色素异常"),
-        ("folliculitis", "毛囊炎"),
-        ("drug_eruption", "药疹"),
-        ("other", "其他"),
-        ("unknown", "不确定"),
-    ]
-    hospital_levels = [
-        ("tertiary", "三级医院/大型综合医院"),
-        ("dermatology_specialty", "皮肤专科医院"),
-        ("secondary", "二级医院"),
-        ("primary_or_clinic", "基层医院/诊所"),
-        ("online", "线上问诊"),
-        ("unknown", "不确定"),
-    ]
-
     for index in range(st.session_state[count_key]):
         with st.container(border=True):
             st.markdown(f"**误诊经历 {index + 1}**")
@@ -614,11 +740,11 @@ def render_repeatable_misdiagnosis(question: dict[str, Any], key: str) -> list[d
                     options=[None, *range(1, 13)],
                     format_func=lambda value: "请选择月份" if value is None else f"{value:02d}月",
                     key=f"{key}_{index}_month",
-                )
+            )
 
             region_value = render_region_inline(f"{key}_{index}_region")
-            level_label_by_value = dict(hospital_levels)
-            disease_label_by_value = dict(disease_options)
+            level_label_by_value = dict(HOSPITAL_LEVEL_OPTIONS)
+            disease_label_by_value = dict(MISDIAGNOSIS_OPTIONS)
             hospital_level_label = st.selectbox(
                 "医院/就诊机构类型",
                 options=["请选择", *level_label_by_value.values()],
