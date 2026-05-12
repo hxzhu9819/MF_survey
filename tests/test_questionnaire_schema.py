@@ -8,11 +8,14 @@ from mf_registry.identity import FollowupIdentityInput
 from mf_registry.questionnaire_schema import load_questionnaire
 
 
+NON_DATA_TYPES = {"info_text", "subsection"}
+
+
 def test_baseline_questionnaire_loads():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
 
     assert bundle.questionnaire_id == "mf_baseline"
-    assert bundle.version == "2026.05.11.4"
+    assert bundle.version == "2026.05.11.5"
     assert len(bundle.questions) > 20
 
 
@@ -113,7 +116,7 @@ def test_submission_roundtrip_records_every_user_input_and_skips_info_text():
     answers = {
         question["id"]: sample_answer_for_question(question)
         for question in bundle.questions
-        if question["type"] != "info_text"
+        if question["type"] not in NON_DATA_TYPES
     }
 
     connection = sqlite3.connect(":memory:")
@@ -126,7 +129,7 @@ def test_submission_roundtrip_records_every_user_input_and_skips_info_text():
         (saved.session_id,),
     ).fetchall()
     stored_question_ids = {row["question_id"] for row in stored_answers}
-    info_text_ids = {question["id"] for question in bundle.questions if question["type"] == "info_text"}
+    info_text_ids = {question["id"] for question in bundle.questions if question["type"] in NON_DATA_TYPES}
 
     assert len(stored_answers) == len(answers)
     assert stored_question_ids == set(answers)
@@ -143,7 +146,7 @@ def test_submission_roundtrip_records_every_user_input_and_skips_info_text():
 
 def test_partial_submission_preserves_current_questionnaire_columns_as_nulls():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
-    user_questions = [question for question in bundle.questions if question["type"] != "info_text"]
+    user_questions = [question for question in bundle.questions if question["type"] not in NON_DATA_TYPES]
     answers = {
         user_questions[0]["id"]: sample_answer_for_question(user_questions[0]),
         user_questions[1]["id"]: sample_answer_for_question(user_questions[1]),
@@ -173,7 +176,7 @@ def test_followup_identity_stores_hashes_but_never_exports_raw_contact():
         answers = {
             question["id"]: sample_answer_for_question(question)
             for question in bundle.questions
-            if question["type"] != "info_text"
+            if question["type"] not in NON_DATA_TYPES
         }
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row

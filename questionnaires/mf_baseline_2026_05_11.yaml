@@ -1,6 +1,6 @@
 questionnaire:
   id: mf_baseline
-  version: "2026.05.11.4"
+  version: "2026.05.11.5"
   language: zh-CN
   title: "蕈样肉芽肿患者基线问卷"
   description: "用于患者共研 Beta 试用的自填问卷。除非自愿选择长期随访身份，请不要填写真实姓名、身份证号、手机号或详细住址。"
@@ -97,6 +97,13 @@ modules:
     why_we_ask: "诊断延迟可能是这个队列最有科学价值的问题之一，也最能帮助未来患者更早获得正确诊断。"
     order: 30
     questions:
+      - id: diagnosis_timeline_subsection
+        export_name: diagnosis_timeline_subsection
+        type: subsection
+        label: "时间线"
+        description: "先记录几个大概年月。这里不需要精确到日期，记不清可以选“不确定”。"
+        required: false
+
       - id: first_symptom_month
         export_name: first_symptom_month
         type: month
@@ -110,6 +117,13 @@ modules:
         label: "第一次因这些症状看皮肤科的大约年月"
         required: false
         allow_unknown: true
+
+      - id: diagnosis_misdiagnosis_subsection
+        export_name: diagnosis_misdiagnosis_subsection
+        type: subsection
+        label: "误诊与活检"
+        description: "很多患者在确诊前被当作湿疹、银屑病或副银屑病处理。把这段经历结构化记录下来，会很有研究价值。"
+        required: false
 
       - id: misdiagnosed_before_mf
         export_name: misdiagnosed_before_mf
@@ -154,6 +168,13 @@ modules:
         required: false
         allow_unknown: true
 
+      - id: diagnosis_methods_subsection
+        export_name: diagnosis_methods_subsection
+        type: subsection
+        label: "确诊依据"
+        description: "这里只记录您知道的检查或信息来源；看不懂报告也可以选择“不确定”。"
+        required: false
+
       - id: diagnosis_methods
         export_name: diagnosis_methods
         type: multiselect
@@ -189,6 +210,13 @@ modules:
     why_we_ask: "皮肤范围、瘙痒、睡眠和疼痛能反映患者实际负担，是单看病理报告很容易漏掉的信息。"
     order: 50
     questions:
+      - id: disease_lesions_subsection
+        export_name: disease_lesions_subsection
+        type: subsection
+        label: "皮肤表现"
+        description: "先描述最近的皮肤表现。多选题只需要选最接近的描述。"
+        required: false
+
       - id: current_lesion_types
         export_name: current_lesion_types
         type: multiselect
@@ -210,6 +238,13 @@ modules:
           - value: uncertain
             label: "不确定"
 
+      - id: disease_area_subsection
+        export_name: disease_area_subsection
+        type: subsection
+        label: "皮肤面积"
+        description: "粗略估计即可。一个手掌加五指大约等于全身皮肤面积的 1%。"
+        required: false
+
       - id: current_bsa_percent
         export_name: current_bsa_percent
         type: body_area_percent
@@ -221,6 +256,13 @@ modules:
         export_name: worst_bsa_percent
         type: body_area_percent
         label: "病情最重时皮损大约占全身皮肤面积百分比"
+        required: false
+
+      - id: disease_symptoms_subsection
+        export_name: disease_symptoms_subsection
+        type: subsection
+        label: "最近 7 天症状"
+        description: "下面几题用 0-10 分点选。0 表示没有，10 表示最严重。"
         required: false
 
       - id: itch_nrs
@@ -271,6 +313,13 @@ modules:
         export_name: staging_info_note
         type: info_text
         label: "官方定义摘要：T1 为斑片/斑块小于 10% 体表面积；T2 为达到或超过 10%；T3 为至少 1 个直径约 1 cm 或以上的肿瘤；T4 为红皮病或融合性红斑达到约 80% 体表面积。mSWAT = 斑片面积×1 + 斑块面积×2 + 肿瘤面积×4。"
+        required: false
+
+      - id: staging_doctor_subsection
+        export_name: staging_doctor_subsection
+        type: subsection
+        label: "医生或病历告诉您的分期"
+        description: "先记录医生说过什么。没有被告知分期本身也是重要信息。"
         required: false
 
       - id: physician_overall_stage
@@ -325,6 +374,13 @@ modules:
           - value: unknown
             label: "不确定/看不懂报告"
 
+      - id: staging_mswat_subsection
+        export_name: staging_mswat_subsection
+        type: subsection
+        label: "mSWAT 皮肤面积估算"
+        description: "把斑片、斑块、肿瘤分开估计，用来计算粗略 mSWAT。没有就保持 0 或跳过。"
+        required: false
+
       - id: mswat_patch_bsa_percent
         export_name: mswat_patch_bsa_percent
         type: body_area_percent
@@ -365,6 +421,13 @@ modules:
         export_name: tnmb_helper_note
         type: info_text
         label: "下面几题用于整理 TNMB：T 代表皮肤，N 代表淋巴结，M 代表内脏受累，B 代表血液受累。N、M、B 很多项目需要医生查体、影像、病理或流式细胞术才能判断；不确定可以跳过。"
+        required: false
+
+      - id: staging_tnmb_subsection
+        export_name: staging_tnmb_subsection
+        type: subsection
+        label: "TNMB 线索"
+        description: "N、M、B 需要检查结果确认。这里只帮助您把自己知道的信息整理出来。"
         required: false
 
       - id: tnmb_node_status_self_reported
@@ -438,6 +501,13 @@ modules:
     why_we_ask: "病理、TCR、血液和淋巴结信息能帮助我们区分不同风险和不同亚型，但患者自填数据会在分析中明确标注为未验证。"
     order: 60
     questions:
+      - id: pathology_subtype_subsection
+        export_name: pathology_subtype_subsection
+        type: subsection
+        label: "病理类型和特征"
+        description: "这些词常出现在病理或门诊记录里。只选您确定见过或医生说过的内容。"
+        required: false
+
       - id: mf_subtype
         export_name: mf_subtype
         type: multiselect
@@ -460,6 +530,13 @@ modules:
             label: "Sézary 综合征/塞扎里综合征"
           - value: uncertain
             label: "不确定"
+
+      - id: pathology_tests_subsection
+        export_name: pathology_tests_subsection
+        type: subsection
+        label: "检查结果"
+        description: "TCR、血液流式、淋巴结或内脏受累不一定每个人都做过；不确定可以直接选不确定。"
+        required: false
 
       - id: tcr_clonality
         export_name: tcr_clonality
@@ -516,6 +593,13 @@ modules:
     why_we_ask: "300 人规模更适合描述治疗路径、缓解持续时间和复发模式，不适合直接证明哪种治疗更好。"
     order: 70
     questions:
+      - id: treatment_history_subsection
+        export_name: treatment_history_subsection
+        type: subsection
+        label: "治疗经历"
+        description: "先记录用过和正在用的治疗。这里不是评价疗效，只是整理治疗路径。"
+        required: false
+
       - id: treatments_ever
         export_name: treatments_ever
         type: multiselect
@@ -563,6 +647,13 @@ modules:
         label: "目前正在使用的治疗"
         required: false
         help: "可简单写药名/光疗频率/治疗方案。不要填写医生或医院内部编号。"
+
+      - id: treatment_response_subsection
+        export_name: treatment_response_subsection
+        type: subsection
+        label: "好转和维持"
+        description: "下面记录患者自己感受到的最好效果、多久开始好转，以及好状态维持多久。"
+        required: false
 
       - id: best_response_self_reported
         export_name: best_response_self_reported
@@ -624,6 +715,13 @@ modules:
             label: "从未明显好转"
           - value: unknown
             label: "不确定/记不清"
+
+      - id: treatment_relapse_subsection
+        export_name: treatment_relapse_subsection
+        type: subsection
+        label: "复发、反跳和换药"
+        description: "这些问题帮助理解真实世界里病情反复和治疗调整的节奏。"
+        required: false
 
       - id: relapse_after_improvement
         export_name: relapse_after_improvement

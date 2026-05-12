@@ -24,6 +24,7 @@ SUPPORTED_TYPES = {
     "region_select",
     "repeatable_misdiagnosis",
     "info_text",
+    "subsection",
 }
 
 

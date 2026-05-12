@@ -934,6 +934,41 @@ def inject_style() -> None:
             white-space: nowrap;
             background: rgba(255, 255, 255, 0.74);
         }
+        .mf-subsection {
+            margin: 1.8rem 0 0.55rem;
+            padding: 0.7rem 0 0.1rem;
+            border-top: 1px solid rgba(47, 125, 104, 0.22);
+        }
+        .mf-subsection strong {
+            display: block;
+            color: var(--mf-teal);
+            font-size: 1.04rem;
+            letter-spacing: 0 !important;
+        }
+        .mf-subsection span {
+            display: block;
+            max-width: 48rem;
+            margin-top: 0.22rem;
+            color: var(--mf-muted);
+            line-height: 1.65;
+            font-size: 0.94rem;
+        }
+        .mf-nrs-anchors {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.8rem;
+            margin: 0.15rem 0 0.55rem;
+            color: var(--mf-muted);
+            font-size: 0.88rem;
+        }
+        .mf-nrs-current {
+            margin-top: -0.15rem;
+            color: var(--mf-muted);
+            font-size: 0.9rem;
+        }
+        .mf-nrs-current strong {
+            color: var(--mf-teal);
+        }
         @keyframes mf-photo-breathe {
             from { background-position: center center; }
             to { background-position: 52% center; }

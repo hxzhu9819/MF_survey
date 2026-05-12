@@ -12,6 +12,7 @@ from mf_registry.regions import REGIONS
 
 ANSWER_STATE_KEY = "survey_answers"
 STEP_STATE_KEY = "survey_step"
+NON_DATA_QUESTION_TYPES = {"info_text", "subsection"}
 MISDIAGNOSIS_OPTIONS = [
     ("parapsoriasis", "副银屑病/副银"),
     ("eczema", "湿疹/皮炎"),
@@ -59,9 +60,13 @@ def render_questionnaire_wizard(body: dict[str, Any]) -> tuple[dict[str, Any], b
         render_module_intro(module)
         st.caption(f"第 {current_step + 1} 关 / 共 {len(modules)} 关")
         st.divider()
-        for index, question in enumerate(module.get("questions", []), start=1):
-            value = render_question(question, index=index)
-            if question["type"] != "info_text":
+        question_index = 0
+        for question in module.get("questions", []):
+            is_data_question = question["type"] not in NON_DATA_QUESTION_TYPES
+            if is_data_question:
+                question_index += 1
+            value = render_question(question, index=question_index if is_data_question else None)
+            if is_data_question:
                 answers[question["id"]] = value
         if module.get("id") == "staging_skin_burden":
             render_tnmb_helper_board(answers, module)
@@ -400,7 +405,9 @@ def render_level_map(
 ) -> None:
     levels: list[dict[str, Any]] = []
     for index, module in enumerate(modules):
-        module_questions = [question for question in module.get("questions", []) if question["type"] != "info_text"]
+        module_questions = [
+            question for question in module.get("questions", []) if question["type"] not in NON_DATA_QUESTION_TYPES
+        ]
         answered = sum(1 for question in module_questions if is_answered(answers.get(question["id"]), question))
         total = len(module_questions) or 1
         percent = round(answered / total * 100)
@@ -498,7 +505,9 @@ def render_review_step(body: dict[str, Any], answers: dict[str, Any]) -> tuple[d
 
     with st.expander("查看各章节完成情况", expanded=True):
         for module in sorted(body.get("modules", []), key=lambda item: item.get("order", 0)):
-            questions = [question for question in module.get("questions", []) if question["type"] != "info_text"]
+            questions = [
+                question for question in module.get("questions", []) if question["type"] not in NON_DATA_QUESTION_TYPES
+            ]
             answered = sum(1 for question in questions if is_answered(answers.get(question["id"]), question))
             st.write(f"{module['title']}：{answered}/{len(questions)}")
 
@@ -545,6 +554,9 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
     if question_type == "info_text":
         render_info_text(label)
         return None
+    if question_type == "subsection":
+        render_subsection(question)
+        return None
 
     restore_question_state(question, key, st.session_state.get(ANSWER_STATE_KEY, {}))
     render_question_header(question, index)
@@ -557,7 +569,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
 
     if question_type == "integer":
         if question.get("allow_unknown"):
-            unknown = st.checkbox(f"{label}：不确定", key=f"{key}_unknown")
+            unknown = st.checkbox("不确定", key=f"{key}_unknown")
             if unknown:
                 return None
         return st.number_input(
@@ -581,7 +593,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
         )
 
     if question_type == "year":
-        if question.get("allow_unknown") and st.checkbox(f"{label}：不确定", key=f"{key}_unknown"):
+        if question.get("allow_unknown") and st.checkbox("不确定", key=f"{key}_unknown"):
             return None
         max_year = min(int(question.get("max", date.today().year)), date.today().year)
         min_year = int(question.get("min", 1920))
@@ -596,7 +608,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
         return int(value) if value else None
 
     if question_type == "month":
-        if question.get("allow_unknown") and st.checkbox(f"{label}：不确定", key=f"{key}_unknown"):
+        if question.get("allow_unknown") and st.checkbox("不确定", key=f"{key}_unknown"):
             return None
         year_col, month_col = st.columns(2, gap="small")
         with year_col:
@@ -650,14 +662,13 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
         return st.checkbox(label, key=key, help=help_text)
 
     if question_type == "slider_nrs_0_10":
-        if not question.get("required") and st.checkbox(f"{label}：暂不填写", key=f"{key}_skip"):
+        if not question.get("required") and st.checkbox("暂不填写", key=f"{key}_skip"):
             return None
         anchors = question.get("anchors", {})
-        st.caption(f"{anchors.get('low', '0')}；{anchors.get('high', '10')}")
-        return st.slider("0-10 分", min_value=0, max_value=10, value=0, key=key, help=help_text)
+        return render_nrs_buttons(key, anchors, help_text)
 
     if question_type == "body_area_percent":
-        if not question.get("required") and st.checkbox(f"{label}：暂不填写", key=f"{key}_skip"):
+        if not question.get("required") and st.checkbox("暂不填写", key=f"{key}_skip"):
             return None
         return st.slider("百分比", min_value=0, max_value=100, value=0, key=key, help=help_text)
 
@@ -703,6 +714,55 @@ def render_info_text(label: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_subsection(question: dict[str, Any]) -> None:
+    title = html.escape(str(question["label"]))
+    description = html.escape(str(question.get("description", ""))).replace("\n", "<br>")
+    body = f"<span>{description}</span>" if description else ""
+    st.markdown(
+        f"""
+        <div class="mf-subsection">
+          <strong>{title}</strong>
+          {body}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_nrs_buttons(key: str, anchors: dict[str, str], help_text: str | None) -> int | None:
+    if help_text:
+        st.caption(help_text)
+    st.markdown(
+        f"""
+        <div class="mf-nrs-anchors">
+          <span>{html.escape(anchors.get("low", "0"))}</span>
+          <span>{html.escape(anchors.get("high", "10"))}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    selected = st.radio(
+        "0-10 分",
+        options=list(range(11)),
+        index=None,
+        key=key,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    if selected is None:
+        st.caption("请选择一个分数，或勾选“暂不填写”。")
+        return None
+    st.markdown(
+        f"""
+        <div class="mf-nrs-current">
+          当前选择：<strong>{int(selected)}</strong> 分
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return int(selected)
 
 
 def render_repeatable_misdiagnosis(question: dict[str, Any], key: str) -> list[dict[str, Any]]:
@@ -833,7 +893,7 @@ def completion_percent(body: dict[str, Any], answers: dict[str, Any]) -> float:
         question
         for module in body.get("modules", [])
         for question in module.get("questions", [])
-        if question["type"] != "info_text"
+        if question["type"] not in NON_DATA_QUESTION_TYPES
     ]
     if not questions:
         return 0.0

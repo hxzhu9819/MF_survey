@@ -224,7 +224,9 @@ def save_submission(
         )
 
         questions_by_id = {question["id"]: question for question in bundle.questions}
-        user_input_questions = [question for question in bundle.questions if question["type"] != "info_text"]
+        user_input_questions = [
+            question for question in bundle.questions if question["type"] not in {"info_text", "subsection"}
+        ]
         for question in user_input_questions:
             question_id = question["id"]
             value = answers.get(question_id)
