@@ -5,16 +5,26 @@ import os
 import secrets
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 from mf_registry.derived import ALGORITHM_VERSION, derive_variables
 from mf_registry.identity import FollowupIdentityInput, build_followup_identity, hash_retrieval_key
 
 if TYPE_CHECKING:
     from mf_registry.questionnaire_schema import QuestionnaireBundle
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg.types.json import Jsonb
+except ImportError:  # pragma: no cover - local SQLite-only installs can still run.
+    psycopg = None
+    dict_row = None
+    Jsonb = None
 
 
 DEFAULT_DB_PATH = Path("data/mf_registry.sqlite3")
@@ -34,7 +44,21 @@ def get_database_path() -> Path:
     return Path(configured) if configured else DEFAULT_DB_PATH
 
 
-def connect() -> sqlite3.Connection:
+def get_database_url() -> str | None:
+    return os.getenv("MF_REGISTRY_DATABASE_URL") or None
+
+
+def connect():
+    database_url = get_database_url()
+    if database_url:
+        if psycopg is None:
+            raise RuntimeError("MF_REGISTRY_DATABASE_URL is set but psycopg is not installed.")
+        return psycopg.connect(
+            database_url,
+            row_factory=dict_row,
+            prepare_threshold=None,
+        )
+
     db_path = get_database_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
@@ -43,7 +67,14 @@ def connect() -> sqlite3.Connection:
     return connection
 
 
-def init_db(connection: sqlite3.Connection) -> None:
+def init_db(connection) -> None:
+    if is_postgres_connection(connection):
+        for statement in postgres_schema_sql().split(";"):
+            if statement.strip():
+                connection.execute(statement)
+        connection.commit()
+        return
+
     connection.executescript(
         """
         create table if not exists participants (
@@ -121,19 +152,22 @@ def init_db(connection: sqlite3.Connection) -> None:
 
 
 def register_questionnaire(
-    connection: sqlite3.Connection,
+    connection,
     bundle: "QuestionnaireBundle",
 ) -> str:
-    existing = connection.execute(
+    existing = execute(
+        connection,
         "select id from questionnaire_versions where yaml_sha256 = ?",
         (bundle.sha256,),
     ).fetchone()
     if existing:
+        connection.commit()
         return str(existing["id"])
 
     version_id = str(uuid.uuid4())
     now = _now()
-    connection.execute(
+    execute(
+        connection,
         """
         insert into questionnaire_versions (
           id, questionnaire_id, version, yaml_sha256, yaml_body, status, published_at, created_at
@@ -144,7 +178,7 @@ def register_questionnaire(
             bundle.questionnaire_id,
             bundle.version,
             bundle.sha256,
-            json.dumps(bundle.body, ensure_ascii=False),
+            json_value(connection, bundle.body),
             "published",
             now,
             now,
@@ -155,7 +189,7 @@ def register_questionnaire(
 
 
 def save_submission(
-    connection: sqlite3.Connection,
+    connection,
     bundle: "QuestionnaireBundle",
     answers: dict[str, Any],
     completion_percent: float,
@@ -171,19 +205,22 @@ def save_submission(
     session_id = str(uuid.uuid4())
     now = _now()
 
-    with connection:
+    with transaction(connection):
         if existing_participant:
-            connection.execute(
+            execute(
+                connection,
                 "update participant_followup_keys set last_seen_at = ? where public_key = ?",
                 (now, identity_material.public_key if identity_material else None),
             )
         else:
-            connection.execute(
+            execute(
+                connection,
                 "insert into participants (id, public_code, created_at, status) values (?, ?, ?, ?)",
                 (participant_id, public_code, now, "active"),
             )
             if identity_material:
-                connection.execute(
+                execute(
+                    connection,
                     """
                     insert into participant_followup_keys (
                       id, participant_id, public_key, retrieval_key_hash, contact_type, contact_hash,
@@ -197,16 +234,18 @@ def save_submission(
                         identity_material.retrieval_key_hash,
                         identity_material.contact_type,
                         identity_material.contact_hash,
-                        1,
+                        bool_value(connection, True),
                         now,
                         now,
                     ),
                 )
-        connection.execute(
+        execute(
+            connection,
             "insert into consents (id, participant_id, consent_version, accepted_at) values (?, ?, ?, ?)",
             (consent_id, participant_id, bundle.consent_version, now),
         )
-        connection.execute(
+        execute(
+            connection,
             """
             insert into survey_sessions (
               id, participant_id, questionnaire_version_id, survey_type, started_at, submitted_at, completion_percent
@@ -230,7 +269,8 @@ def save_submission(
         for question in user_input_questions:
             question_id = question["id"]
             value = answers.get(question_id)
-            connection.execute(
+            execute(
+                connection,
                 """
                 insert into answers (id, session_id, question_id, export_name, value, answered_at, source)
                 values (?, ?, ?, ?, ?, ?, ?)
@@ -240,7 +280,7 @@ def save_submission(
                     session_id,
                     question_id,
                     question["export_name"],
-                    json.dumps(value, ensure_ascii=False),
+                    json_value(connection, value),
                     now,
                     "patient_reported",
                 ),
@@ -252,7 +292,8 @@ def save_submission(
             if question_id in questions_by_id
         }
         for name, value in derive_variables(export_answers).items():
-            connection.execute(
+            execute(
+                connection,
                 """
                 insert into derived_variables (id, session_id, variable_name, value, algorithm_version, created_at)
                 values (?, ?, ?, ?, ?, ?)
@@ -261,7 +302,7 @@ def save_submission(
                     str(uuid.uuid4()),
                     session_id,
                     name,
-                    json.dumps(value, ensure_ascii=False),
+                    json_value(connection, value),
                     ALGORITHM_VERSION,
                     now,
                 ),
@@ -276,10 +317,11 @@ def save_submission(
     )
 
 
-def find_participant_by_retrieval_key(connection: sqlite3.Connection, retrieval_key: str) -> sqlite3.Row | None:
+def find_participant_by_retrieval_key(connection, retrieval_key: str):
     init_db(connection)
     retrieval_hash = hash_retrieval_key(retrieval_key)
-    return connection.execute(
+    return execute(
+        connection,
         """
         select p.id, p.public_code, f.public_key
         from participant_followup_keys f
@@ -290,15 +332,16 @@ def find_participant_by_retrieval_key(connection: sqlite3.Connection, retrieval_
     ).fetchone()
 
 
-def count_submissions(connection: sqlite3.Connection) -> int:
+def count_submissions(connection) -> int:
     init_db(connection)
-    row = connection.execute("select count(*) as count from survey_sessions where submitted_at is not null").fetchone()
+    row = execute(connection, "select count(*) as count from survey_sessions where submitted_at is not null").fetchone()
     return int(row["count"])
 
 
-def export_rows(connection: sqlite3.Connection) -> list[dict[str, Any]]:
+def export_rows(connection) -> list[dict[str, Any]]:
     init_db(connection)
-    sessions = connection.execute(
+    sessions = execute(
+        connection,
         """
         select
           s.id as session_id,
@@ -316,36 +359,39 @@ def export_rows(connection: sqlite3.Connection) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for session in sessions:
         row = dict(session)
-        answers = connection.execute(
+        answers = execute(
+            connection,
             "select export_name, value from answers where session_id = ?",
             (session["session_id"],),
         ).fetchall()
         for answer in answers:
-            row[answer["export_name"]] = json.loads(answer["value"]) if answer["value"] else None
+            row[answer["export_name"]] = load_json_value(answer["value"])
 
-        derived = connection.execute(
+        derived = execute(
+            connection,
             "select variable_name, value from derived_variables where session_id = ?",
             (session["session_id"],),
         ).fetchall()
         for variable in derived:
-            row[variable["variable_name"]] = json.loads(variable["value"]) if variable["value"] else None
+            row[variable["variable_name"]] = load_json_value(variable["value"])
         rows.append(row)
     return rows
 
 
-def _make_public_code(connection: sqlite3.Connection) -> str:
+def _make_public_code(connection) -> str:
     for _ in range(20):
         code = "MF-" + secrets.token_urlsafe(5).upper().replace("_", "A").replace("-", "B")
-        existing = connection.execute("select 1 from participants where public_code = ?", (code,)).fetchone()
+        existing = execute(connection, "select 1 from participants where public_code = ?", (code,)).fetchone()
         if not existing:
             return code
     raise RuntimeError("Could not generate unique public code.")
 
 
-def _find_participant_by_public_key(connection: sqlite3.Connection, public_key: str | None) -> sqlite3.Row | None:
+def _find_participant_by_public_key(connection, public_key: str | None):
     if not public_key:
         return None
-    return connection.execute(
+    return execute(
+        connection,
         """
         select p.id, p.public_code
         from participant_followup_keys f
@@ -354,6 +400,56 @@ def _find_participant_by_public_key(connection: sqlite3.Connection, public_key: 
         """,
         (public_key,),
     ).fetchone()
+
+
+def execute(connection, query: str, params: tuple[Any, ...] = ()):
+    return connection.execute(sql(connection, query), params)
+
+
+def sql(connection, query: str) -> str:
+    return query.replace("?", "%s") if is_postgres_connection(connection) else query
+
+
+def is_postgres_connection(connection) -> bool:
+    return connection.__class__.__module__.startswith("psycopg")
+
+
+def json_value(connection, value: Any) -> Any:
+    if is_postgres_connection(connection):
+        if Jsonb is None:
+            raise RuntimeError("Postgres JSON support requires psycopg.")
+        return Jsonb(value)
+    return json.dumps(value, ensure_ascii=False)
+
+
+def load_json_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def bool_value(connection, value: bool) -> bool | int:
+    return value if is_postgres_connection(connection) else int(value)
+
+
+@contextmanager
+def transaction(connection) -> Iterator[None]:
+    if is_postgres_connection(connection):
+        with connection.transaction():
+            yield
+    else:
+        with connection:
+            yield
+
+
+def postgres_schema_sql() -> str:
+    migration_path = Path(__file__).resolve().parents[1] / "migrations" / "001_init.sql"
+    return migration_path.read_text(encoding="utf-8")
 
 
 def _now() -> str:

@@ -62,7 +62,12 @@ def main() -> None:
 
 
 def configure_runtime_secrets() -> None:
-    for name in ("MF_REGISTRY_IDENTITY_PEPPER", "MF_REGISTRY_ADMIN_PASSWORD", "MF_REGISTRY_SQLITE_PATH"):
+    for name in (
+        "MF_REGISTRY_IDENTITY_PEPPER",
+        "MF_REGISTRY_ADMIN_PASSWORD",
+        "MF_REGISTRY_SQLITE_PATH",
+        "MF_REGISTRY_DATABASE_URL",
+    ):
         value = read_secret(name)
         if value and not os.getenv(name):
             os.environ[name] = str(value)

@@ -13,7 +13,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The local prototype stores submissions in:
+By default, the local prototype stores submissions in:
 
 ```text
 data/mf_registry.sqlite3
@@ -25,6 +25,12 @@ Override it with:
 export MF_REGISTRY_SQLITE_PATH=/path/to/mf_registry.sqlite3
 ```
 
+To use Supabase/Postgres instead, set a Postgres connection URL:
+
+```bash
+export MF_REGISTRY_DATABASE_URL="postgresql://..."
+```
+
 ## Current Features
 
 - Landing page for the pilot project.
@@ -33,7 +39,7 @@ export MF_REGISTRY_SQLITE_PATH=/path/to/mf_registry.sqlite3
 - YAML-defined baseline questionnaire.
 - Dynamic Streamlit rendering.
 - Versioned questionnaire registration.
-- Local SQLite persistence.
+- Local SQLite persistence by default, with optional Supabase/Postgres persistence via `MF_REGISTRY_DATABASE_URL`.
 - Optional long-term follow-up identity using hashed WeChat ID plus a participant-held retrieval key.
 - Derived variables for diagnostic delay, BSA category, possible patient-reported stage group, severe itch, and treatment count.
 - Researcher CSV export.
@@ -63,9 +69,9 @@ For beta UI review:
 
 For beta data collection:
 
-1. Move persistence to managed Postgres such as Supabase.
-2. Run `migrations/001_init.sql`.
-3. Store secrets in Streamlit secrets, never in the repo.
+1. Create a managed Postgres project such as Supabase.
+2. Copy the Postgres connection string into Streamlit secrets as `MF_REGISTRY_DATABASE_URL`.
+3. Store admin password and pepper in Streamlit secrets, never in the repo.
 4. Freeze questionnaire and consent versions before recruitment.
 5. Test mainland China access from several networks before broad invitation.
 

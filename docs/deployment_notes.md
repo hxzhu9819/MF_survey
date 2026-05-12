@@ -19,7 +19,7 @@ Recommended settings:
 - Secrets:
   - `MF_REGISTRY_ADMIN_PASSWORD`
   - `MF_REGISTRY_IDENTITY_PEPPER`
-  - later: `MF_REGISTRY_DATABASE_URL`
+  - `MF_REGISTRY_DATABASE_URL` for Supabase/Postgres-backed beta data collection
 
 Community Cloud is free and GitHub-based, and app changes are deployed from repository updates. It is appropriate for early beta UI work, but local files on the app host should not be treated as durable research storage.
 
@@ -34,6 +34,7 @@ Use this for a small usability test with de-identified or intentionally fake dat
 
 ```toml
 MF_REGISTRY_ADMIN_PASSWORD = "replace-with-a-strong-password"
+MF_REGISTRY_DATABASE_URL = "postgresql://postgres.PROJECT_REF:password@aws-0-region.pooler.supabase.com:6543/postgres"
 
 # Optional. Set this only when you are ready to test long-term follow-up identity.
 MF_REGISTRY_IDENTITY_PEPPER = "replace-with-a-long-random-secret"
@@ -54,13 +55,14 @@ Streamlit Community Cloud may be slow or intermittently inaccessible from mainla
 3. Keep image assets lightweight and preferably local or stable CDN-hosted.
 4. If access is unreliable, keep the same Streamlit app but deploy to a mainland-accessible provider or a Hong Kong/Singapore VPS with a custom domain.
 
-## Supabase Setup Sketch
+## Supabase Setup
 
 1. Create a free Postgres project.
-2. Run `migrations/001_init.sql`.
-3. Store the database URL in Streamlit secrets.
-4. Add a Postgres adapter or Supabase sync worker.
-5. Verify insert, retrieval key lookup, export, and backup workflows before recruitment.
+2. Copy the project connection string. For hosted Streamlit, prefer Supabase's pooler URL because direct database connections may be unavailable from some environments.
+3. Store the URL in Streamlit secrets as `MF_REGISTRY_DATABASE_URL`.
+4. Deploy or restart the app. On startup, the app creates the required tables from `migrations/001_init.sql` if they do not already exist.
+5. Complete one test questionnaire, test retrieval-key lookup if follow-up identity is enabled, and test researcher export/CSV download.
+6. In Supabase, confirm the rows appear in `participants`, `survey_sessions`, `answers`, and `derived_variables`.
 
 ## Streamlit Secrets Example
 
@@ -77,7 +79,7 @@ MF_REGISTRY_IDENTITY_PEPPER = "replace-with-long-random-secret"
 Use a staged migration rather than a risky all-at-once rewrite:
 
 1. Local dry run: SQLite only.
-2. Beta rehearsal: SQLite primary plus explicit export/import into Supabase after each test batch.
+2. Beta rehearsal: set `MF_REGISTRY_DATABASE_URL` locally or on a staging deployment and complete dry-run submissions.
 3. Beta data collection: Supabase Postgres primary. Keep SQLite only for local development.
 4. Follow-up phase: Supabase primary plus scheduled CSV backups.
 
