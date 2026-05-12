@@ -1662,10 +1662,23 @@ def render_admin(connection) -> None:
     if not admin_password:
         st.warning("研究者导出暂未开放。请先配置 MF_REGISTRY_ADMIN_PASSWORD。")
         return
-    entered = st.text_input("研究者密码", type="password")
-    if entered != admin_password:
-        st.info("请输入研究者密码后查看导出。")
-        return
+
+    if not st.session_state.get("admin_export_unlocked"):
+        with st.form("admin_export_login"):
+            entered = st.text_input("研究者密码", type="password")
+            submitted = st.form_submit_button("查看导出", type="primary")
+        if not submitted:
+            st.info("请输入研究者密码后查看导出。")
+            return
+        if entered != admin_password:
+            st.error("密码不正确，请重新输入。")
+            return
+        st.session_state["admin_export_unlocked"] = True
+        st.rerun()
+
+    if st.button("锁定导出页"):
+        st.session_state["admin_export_unlocked"] = False
+        st.rerun()
 
     rows = export_rows(connection)
     dataframe = rows_to_dataframe(rows)

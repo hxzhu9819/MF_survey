@@ -4,6 +4,7 @@ import sqlite3
 
 from mf_registry.db import export_rows, find_participant_by_retrieval_key, init_db, save_submission
 from mf_registry.derived import derive_variables
+from mf_registry.export import rows_to_dataframe
 from mf_registry.identity import FollowupIdentityInput
 from mf_registry.questionnaire_schema import load_questionnaire
 
@@ -166,6 +167,20 @@ def test_partial_submission_preserves_current_questionnaire_columns_as_nulls():
     exported_row = export_rows(connection)[0]
     assert exported_row[user_questions[0]["export_name"]] == answers[user_questions[0]["id"]]
     assert exported_row[user_questions[-1]["export_name"]] is None
+
+
+def test_export_dataframe_normalizes_mixed_values_for_streamlit():
+    dataframe = rows_to_dataframe(
+        [
+            {"public_code": "MF-1", "lymph_node_or_visceral": "no", "selected": True},
+            {"public_code": "MF-2", "lymph_node_or_visceral": False, "selected": ["a", "b"]},
+        ]
+    )
+
+    assert dataframe.loc[0, "lymph_node_or_visceral"] == "no"
+    assert dataframe.loc[1, "lymph_node_or_visceral"] == "false"
+    assert dataframe.loc[0, "selected"] == "true"
+    assert dataframe.loc[1, "selected"] == '["a", "b"]'
 
 
 def test_followup_identity_stores_hashes_but_never_exports_raw_contact():
