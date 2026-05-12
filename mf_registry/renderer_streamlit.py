@@ -48,9 +48,7 @@ def render_questionnaire_wizard(body: dict[str, Any]) -> tuple[dict[str, Any], b
 
     answers = st.session_state[ANSWER_STATE_KEY]
     sync_answers_from_widgets(body, answers)
-    current_module = modules[current_step] if current_step < max_step else None
-    navigation_enabled = current_module is None or not should_use_deferred_form(current_module)
-    render_level_map(modules, current_step, answers, navigation_enabled=navigation_enabled)
+    render_level_map(modules, current_step, answers)
     completion = completion_percent(body, answers)
     st.progress(completion / 100, text=f"已完成 {completion}%")
 
@@ -58,61 +56,19 @@ def render_questionnaire_wizard(body: dict[str, Any]) -> tuple[dict[str, Any], b
         return render_review_step(body, answers)
 
     module = modules[current_step]
-    if should_use_deferred_form(module):
-        render_module_form(module, answers, current_step, max_step, body)
-    else:
-        with st.container(border=True):
-            render_module_intro(module)
-            st.caption(f"第 {current_step + 1} 关 / 共 {len(modules)} 关")
-            st.divider()
-            render_module_questions(module, answers)
-            if module.get("id") == "staging_skin_burden":
-                render_tnmb_helper_board(answers, module)
-
-        st.session_state[ANSWER_STATE_KEY] = answers
-        missing = missing_required_questions(body, answers)
-        st.caption(f"当前总完成度 {completion_percent(body, answers)}%。必填未完成：{len(missing)} 项。")
-        render_step_controls(current_step, max_step)
-    return answers, False
-
-
-def should_use_deferred_form(module: dict[str, Any]) -> bool:
-    if module.get("id") == "staging_skin_burden":
-        return False
-    unsupported_types = {"repeatable_misdiagnosis"}
-    return not any(question.get("type") in unsupported_types for question in module.get("questions", []))
-
-
-def render_module_form(
-    module: dict[str, Any],
-    answers: dict[str, Any],
-    current_step: int,
-    max_step: int,
-    body: dict[str, Any],
-) -> None:
     with st.container(border=True):
         render_module_intro(module)
-        st.caption(f"第 {current_step + 1} 关 / 共 {max_step} 关")
+        st.caption(f"第 {current_step + 1} 关 / 共 {len(modules)} 关")
         st.divider()
-        with st.form(f"survey_step_form_{module['id']}"):
-            st.caption("本关填写过程中不会反复刷新；完成后请点击下方保存按钮。")
-            render_module_questions(module, answers)
-            missing = missing_required_questions(body, answers)
-            st.caption(f"当前总完成度 {completion_percent(body, answers)}%。必填未完成：{len(missing)} 项。")
-            back_col, next_col = st.columns([1, 1], gap="small")
-            with back_col:
-                previous_clicked = st.form_submit_button("保存本关并返回上一关", disabled=current_step == 0, width="stretch")
-            with next_col:
-                label = "保存本关并进入确认页" if current_step == max_step - 1 else "保存本关并进入下一关"
-                next_clicked = st.form_submit_button(label, type="primary", width="stretch")
+        render_module_questions(module, answers)
+        if module.get("id") == "staging_skin_burden":
+            render_tnmb_helper_board(answers, module)
 
     st.session_state[ANSWER_STATE_KEY] = answers
-    if previous_clicked:
-        st.session_state[STEP_STATE_KEY] = max(current_step - 1, 0)
-        st.rerun()
-    if next_clicked:
-        st.session_state[STEP_STATE_KEY] = min(current_step + 1, max_step)
-        st.rerun()
+    missing = missing_required_questions(body, answers)
+    st.caption(f"当前总完成度 {completion_percent(body, answers)}%。必填未完成：{len(missing)} 项。")
+    render_step_controls(current_step, max_step)
+    return answers, False
 
 
 def render_module_questions(module: dict[str, Any], answers: dict[str, Any]) -> None:
@@ -445,7 +401,6 @@ def render_level_map(
     modules: list[dict[str, Any]],
     current_step: int,
     answers: dict[str, Any],
-    navigation_enabled: bool = True,
 ) -> None:
     levels: list[dict[str, Any]] = []
     for index, module in enumerate(modules):
@@ -491,13 +446,10 @@ def render_level_map(
                     level["label"],
                     key=f"level_map_{level_index}",
                     width="stretch",
-                    disabled=not navigation_enabled,
                 ):
                     st.session_state[STEP_STATE_KEY] = level["target"]
                     st.rerun()
     st.markdown('<div class="mf-level-map-native-end"></div>', unsafe_allow_html=True)
-    if not navigation_enabled:
-        st.caption("本关正在填写中。请先点击本关底部的保存按钮，再通过进度地图跳转到其他章节。")
 
 
 def render_level_map_styles(levels: list[dict[str, Any]], row_size: int) -> None:
