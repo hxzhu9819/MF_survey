@@ -16,7 +16,7 @@ def test_baseline_questionnaire_loads():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
 
     assert bundle.questionnaire_id == "mf_baseline"
-    assert bundle.version == "2026.05.12.1"
+    assert bundle.version == "2026.05.12.2"
     assert len(bundle.questions) > 20
 
 

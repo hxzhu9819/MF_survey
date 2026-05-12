@@ -1,6 +1,6 @@
 questionnaire:
   id: mf_baseline
-  version: "2026.05.12.1"
+  version: "2026.05.12.2"
   language: zh-CN
   title: "蕈样肉芽肿患者基线问卷"
   description: "用于患者共研 Beta 试用的自填问卷。除非自愿选择长期随访身份，请不要填写真实姓名、身份证号、手机号或详细住址。"
@@ -104,6 +104,41 @@ modules:
             label: "县城/乡镇"
           - value: unknown
             label: "不确定"
+
+      - id: family_history_subsection
+        export_name: family_history_subsection
+        type: subsection
+        label: "家族史"
+        description: "这里指父母、兄弟姐妹、子女、祖父母/外祖父母等亲属中，您知道的长期或明确诊断过的皮肤病。不确定可以直接选不确定。"
+        required: false
+
+      - id: family_history_skin_disease
+        export_name: family_history_skin_disease
+        type: multiselect
+        label: "您的亲属中是否有人被诊断或长期患有以下皮肤病？"
+        required: false
+        help: "可多选。这里不需要填写亲属姓名或具体身份。"
+        options:
+          - value: none_known
+            label: "没有已知皮肤病家族史"
+          - value: psoriasis
+            label: "银屑病/牛皮癣"
+          - value: eczema_dermatitis
+            label: "湿疹/特应性皮炎/长期皮炎"
+          - value: vitiligo
+            label: "白癜风"
+          - value: autoimmune_skin_disease
+            label: "自身免疫性皮肤病，如红斑狼疮、天疱疮等"
+          - value: cutaneous_lymphoma
+            label: "皮肤淋巴瘤/蕈样肉芽肿/CTCL"
+          - value: lymphoma_or_blood_cancer
+            label: "淋巴瘤、白血病或其他血液肿瘤"
+          - value: chronic_itch_or_rash_unknown
+            label: "长期瘙痒、皮疹或脱屑，但不清楚诊断"
+          - value: other_skin_disease
+            label: "其他皮肤病"
+          - value: unknown
+            label: "不确定/不了解家族病史"
 
   - id: diagnosis_journey
     title: "诊断经历"
