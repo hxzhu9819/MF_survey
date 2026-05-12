@@ -9,6 +9,7 @@ import streamlit as st
 from mf_registry.db import (
     connect,
     count_submissions,
+    describe_connection,
     export_rows,
     find_participant_by_retrieval_key,
     init_db,
@@ -1663,6 +1664,8 @@ def render_retrieval(connection) -> None:
 
 def render_admin(connection) -> None:
     st.title("研究者导出")
+    render_database_status(connection)
+
     admin_password = os.getenv("MF_REGISTRY_ADMIN_PASSWORD")
     if not admin_password:
         st.warning("研究者导出暂未开放。请先配置 MF_REGISTRY_ADMIN_PASSWORD。")
@@ -1700,6 +1703,33 @@ def render_admin(connection) -> None:
         file_name="mf_registry_export.csv",
         mime="text/csv",
     )
+
+
+def render_database_status(connection) -> None:
+    status = describe_connection(connection)
+    status_label = "正常" if status.healthy else "异常"
+    backend_help = "已配置 MF_REGISTRY_DATABASE_URL" if status.configured else "未配置 MF_REGISTRY_DATABASE_URL，使用本地开发数据库"
+    col_backend, col_health, col_count = st.columns(3, gap="small")
+    with col_backend:
+        st.metric("数据后端", status.backend)
+        st.caption(backend_help)
+    with col_health:
+        st.metric("连接状态", status_label)
+        st.caption(status.message)
+    with col_count:
+        try:
+            submission_count = count_submissions(connection)
+        except Exception:
+            submission_count = 0
+        st.metric("当前提交数", submission_count)
+        st.caption("来自当前连接的数据源")
+    st.caption(f"连接目标：{status.target}")
+    if not status.configured:
+        st.info("当前仍在使用本地 SQLite。部署到 Supabase 时，请在 Streamlit secrets 中配置 MF_REGISTRY_DATABASE_URL。")
+    elif not status.healthy:
+        st.error("Supabase/Postgres 已配置，但连接检查失败。请检查数据库 URL、密码、网络和 Supabase 项目状态。")
+    else:
+        st.success("Supabase/Postgres 连接正常，问卷提交和导出会使用该数据源。")
 
 
 def find_missing_required(body: dict, answers: dict) -> list[str]:

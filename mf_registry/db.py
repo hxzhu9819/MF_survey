@@ -39,6 +39,15 @@ class SavedSubmission:
     retrieval_key: str | None = None
 
 
+@dataclass(frozen=True)
+class DatabaseStatus:
+    backend: str
+    configured: bool
+    target: str
+    healthy: bool
+    message: str
+
+
 def get_database_path() -> Path:
     configured = os.getenv("MF_REGISTRY_SQLITE_PATH")
     return Path(configured) if configured else DEFAULT_DB_PATH
@@ -65,6 +74,48 @@ def connect():
     connection.row_factory = sqlite3.Row
     connection.execute("pragma foreign_keys = on")
     return connection
+
+
+def describe_connection(connection) -> DatabaseStatus:
+    if is_postgres_connection(connection):
+        target = mask_database_url(get_database_url() or "")
+        try:
+            row = execute(connection, "select current_database() as database_name").fetchone()
+            database_name = row["database_name"] if row else "postgres"
+            return DatabaseStatus(
+                backend="Supabase/Postgres",
+                configured=True,
+                target=target,
+                healthy=True,
+                message=f"已连接到数据库 {database_name}",
+            )
+        except Exception as error:
+            return DatabaseStatus(
+                backend="Supabase/Postgres",
+                configured=True,
+                target=target,
+                healthy=False,
+                message=f"连接检查失败：{error}",
+            )
+
+    target_path = str(get_database_path())
+    try:
+        execute(connection, "select 1").fetchone()
+        return DatabaseStatus(
+            backend="本地 SQLite",
+            configured=False,
+            target=target_path,
+            healthy=True,
+            message="本地数据库可用",
+        )
+    except Exception as error:
+        return DatabaseStatus(
+            backend="本地 SQLite",
+            configured=False,
+            target=target_path,
+            healthy=False,
+            message=f"连接检查失败：{error}",
+        )
 
 
 def init_db(connection) -> None:
@@ -435,6 +486,21 @@ def load_json_value(value: Any) -> Any:
 
 def bool_value(connection, value: bool) -> bool | int:
     return value if is_postgres_connection(connection) else int(value)
+
+
+def mask_database_url(database_url: str) -> str:
+    if not database_url:
+        return "未配置"
+    if "@" not in database_url:
+        return "已配置，格式待确认"
+
+    scheme, _, rest = database_url.partition("://")
+    _, _, host_and_path = rest.rpartition("@")
+    host = host_and_path.split("/", 1)[0]
+    database = host_and_path.split("/", 1)[1].split("?", 1)[0] if "/" in host_and_path else ""
+    prefix = f"{scheme}://" if scheme else ""
+    suffix = f"/{database}" if database else ""
+    return f"{prefix}***@{host}{suffix}"
 
 
 @contextmanager
