@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import html
 import os
+import sys
+from contextlib import closing
 from pathlib import Path
 
 import streamlit as st
+
+if sys.version_info >= (3, 14):
+    st.error(
+        "当前部署环境正在使用 Python 3.14。这个项目建议在 Streamlit Community Cloud 的 "
+        "Advanced settings 中选择 Python 3.12 后重新部署；repo 里的 runtime.txt "
+        "不会替 Cloud app 自动切换 Python 版本。"
+    )
+    st.stop()
 
 from mf_registry.db import (
     connect,
@@ -37,29 +47,33 @@ def cached_questionnaire(path: str, mtime: float):
     return load_questionnaire(path)
 
 
+def open_database_connection():
+    connection = connect()
+    init_db(connection)
+    return connection
+
+
 def main() -> None:
     configure_runtime_secrets()
     inject_style()
     bundle = cached_questionnaire(str(QUESTIONNAIRE_PATH), QUESTIONNAIRE_PATH.stat().st_mtime)
-    connection = connect()
-    init_db(connection)
     requested_page = page_from_query()
     page_labels = ["项目首页", "资料库", "填写问卷", "找回随访编号", "研究者导出"]
     page = requested_page if requested_page in page_labels else "项目首页"
     apply_step_from_query()
 
-    render_top_nav(page, bundle.version, count_submissions(connection))
+    render_top_nav(page, bundle.version)
 
     if page == "项目首页":
         render_landing(bundle)
     elif page == "资料库":
         render_resources()
     elif page == "填写问卷":
-        render_survey(bundle, connection)
+        render_survey(bundle)
     elif page == "找回随访编号":
-        render_retrieval(connection)
+        render_retrieval()
     else:
-        render_admin(connection)
+        render_admin()
 
 
 def configure_runtime_secrets() -> None:
@@ -106,7 +120,7 @@ def apply_step_from_query() -> None:
         return
 
 
-def render_top_nav(current_page: str, version: str, submission_count: int) -> None:
+def render_top_nav(current_page: str, version: str) -> None:
     nav_items = [
         ("首页", "home", "项目首页", "nav_home"),
         ("资料库", "resources", "资料库", "nav_resources"),
@@ -127,7 +141,7 @@ def render_top_nav(current_page: str, version: str, submission_count: int) -> No
         '<nav class="mf-top-nav" aria-label="主导航">'
         '<a class="mf-nav-brand" href="/?page=home" target="_self"><span>MF</span><strong>患者共研</strong></a>'
         f'<div class="mf-nav-links">{"".join(nav_forms)}</div>'
-        f'<div class="mf-nav-meta">v{html.escape(version)} · {submission_count} 份</div>'
+        f'<div class="mf-nav-meta">v{html.escape(version)}</div>'
         "</nav>"
     )
     st.markdown(nav_html, unsafe_allow_html=True)
@@ -1551,7 +1565,7 @@ def render_submission_success(saved) -> None:
     )
 
 
-def render_survey(bundle, connection) -> None:
+def render_survey(bundle) -> None:
     st.title(bundle.title)
     description = bundle.body["questionnaire"].get("description")
     if description:
@@ -1595,7 +1609,12 @@ def render_survey(bundle, connection) -> None:
             return
 
         completion = completion_percent(bundle.body, answers)
-        saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
+        try:
+            with closing(open_database_connection()) as connection:
+                saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
+        except Exception:
+            st.error("暂时无法保存问卷。请稍后再试，或联系研究者检查数据库连接。")
+            return
         render_submission_success(saved)
 
 
@@ -1638,7 +1657,7 @@ def render_followup_identity() -> FollowupIdentityInput | None:
         )
 
 
-def render_retrieval(connection) -> None:
+def render_retrieval() -> None:
     st.title("找回随访编号")
     st.markdown(
         """
@@ -1651,7 +1670,12 @@ def render_retrieval(connection) -> None:
         if not retrieval_key.strip():
             st.warning("请先输入 retrieval key。")
             return
-        row = find_participant_by_retrieval_key(connection, retrieval_key)
+        try:
+            with closing(open_database_connection()) as connection:
+                row = find_participant_by_retrieval_key(connection, retrieval_key)
+        except Exception:
+            st.error("暂时无法连接数据库。请稍后再试，或联系研究者检查部署配置。")
+            return
         if not row:
             st.error("没有找到对应记录。请检查 retrieval key 是否完整。")
             return
@@ -1662,9 +1686,8 @@ def render_retrieval(connection) -> None:
         st.code(row["public_key"])
 
 
-def render_admin(connection) -> None:
+def render_admin() -> None:
     st.title("研究者导出")
-    render_database_status(connection)
 
     admin_password = os.getenv("MF_REGISTRY_ADMIN_PASSWORD")
     if not admin_password:
@@ -1672,6 +1695,7 @@ def render_admin(connection) -> None:
         return
 
     if not st.session_state.get("admin_export_unlocked"):
+        st.caption("登录后可查看数据库连接状态、提交数量和导出数据。")
         with st.form("admin_export_login"):
             entered = st.text_input("研究者密码", type="password")
             submitted = st.form_submit_button("查看导出", type="primary")
@@ -1684,11 +1708,21 @@ def render_admin(connection) -> None:
         st.session_state["admin_export_unlocked"] = True
         st.rerun()
 
-    if st.button("锁定导出页"):
-        st.session_state["admin_export_unlocked"] = False
-        st.rerun()
+    try:
+        with closing(open_database_connection()) as connection:
+            render_database_status(connection)
 
-    rows = export_rows(connection)
+            if st.button("锁定导出页"):
+                st.session_state["admin_export_unlocked"] = False
+                st.rerun()
+
+            rows = export_rows(connection)
+    except Exception as error:
+        st.error("暂时无法连接数据库。请检查 Streamlit secrets、Supabase 项目状态和数据库 URL。")
+        with st.expander("技术信息"):
+            st.code(str(error))
+        return
+
     dataframe = rows_to_dataframe(rows)
     st.metric("已提交问卷", len(dataframe))
 

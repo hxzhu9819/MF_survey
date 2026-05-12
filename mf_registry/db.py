@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import TYPE_CHECKING, Any, Iterator
 
 from mf_registry.derived import ALGORITHM_VERSION, derive_variables
@@ -28,6 +29,8 @@ except ImportError:  # pragma: no cover - local SQLite-only installs can still r
 
 
 DEFAULT_DB_PATH = Path("data/mf_registry.sqlite3")
+_POSTGRES_SCHEMA_READY_KEYS: set[str] = set()
+_POSTGRES_SCHEMA_READY_LOCK = Lock()
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,7 @@ def connect():
             database_url,
             row_factory=dict_row,
             prepare_threshold=None,
+            connect_timeout=5,
         )
 
     db_path = get_database_path()
@@ -120,10 +124,19 @@ def describe_connection(connection) -> DatabaseStatus:
 
 def init_db(connection) -> None:
     if is_postgres_connection(connection):
-        for statement in postgres_schema_sql().split(";"):
-            if statement.strip():
-                connection.execute(statement)
-        connection.commit()
+        schema_key = postgres_schema_key()
+        with _POSTGRES_SCHEMA_READY_LOCK:
+            if schema_key in _POSTGRES_SCHEMA_READY_KEYS:
+                return
+            try:
+                for statement in postgres_schema_sql().split(";"):
+                    if statement.strip():
+                        connection.execute(statement)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            _POSTGRES_SCHEMA_READY_KEYS.add(schema_key)
         return
 
     connection.executescript(
@@ -501,6 +514,10 @@ def mask_database_url(database_url: str) -> str:
     prefix = f"{scheme}://" if scheme else ""
     suffix = f"/{database}" if database else ""
     return f"{prefix}***@{host}{suffix}"
+
+
+def postgres_schema_key() -> str:
+    return f"postgres:{get_database_url() or 'configured'}"
 
 
 @contextmanager
