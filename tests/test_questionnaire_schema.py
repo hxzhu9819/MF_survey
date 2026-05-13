@@ -73,6 +73,79 @@ def test_tnmb_m1_is_ivb_even_with_limited_other_information():
     assert derived["patient_tnmb_stage_hint"] == "ivb_hint"
 
 
+def test_repeatable_widget_snapshot_ignores_unmounted_children(monkeypatch):
+    monkeypatch.setattr(renderer.st, "session_state", {"q_misdiagnosis_events_count": 1})
+
+    value = renderer.answer_from_widget_state(
+        {"type": "repeatable_misdiagnosis"},
+        "q_misdiagnosis_events",
+    )
+
+    assert value is renderer.WIDGET_VALUE_MISSING
+
+
+def test_repeatable_widget_snapshot_keeps_filled_children(monkeypatch):
+    monkeypatch.setattr(
+        renderer.st,
+        "session_state",
+        {
+            "q_misdiagnosis_events_count": 1,
+            "q_misdiagnosis_events_0_year": 2024,
+            "q_misdiagnosis_events_0_month": 3,
+            "q_misdiagnosis_events_0_region_province": "上海市",
+            "q_misdiagnosis_events_0_region_city": "上海市",
+            "q_misdiagnosis_events_0_hospital_level": "三级医院/大型综合医院",
+            "q_misdiagnosis_events_0_disease": "副银屑病/副银",
+        },
+    )
+
+    value = renderer.answer_from_widget_state(
+        {"type": "repeatable_misdiagnosis"},
+        "q_misdiagnosis_events",
+    )
+
+    assert value == [
+        {
+            "visit_month": "2024-03",
+            "care_region": {"province": "上海市", "city": "上海市"},
+            "hospital_level": "tertiary",
+            "misdiagnosis": "parapsoriasis",
+            "misdiagnosis_other": None,
+        }
+    ]
+
+
+def test_sync_preserves_repeatable_answer_when_children_are_unmounted(monkeypatch):
+    answers = {
+        "misdiagnosis_events": [
+            {
+                "visit_month": "2024-03",
+                "care_region": {"province": "上海市", "city": "上海市"},
+                "hospital_level": "tertiary",
+                "misdiagnosis": "parapsoriasis",
+                "misdiagnosis_other": None,
+            }
+        ]
+    }
+    body = {
+        "modules": [
+            {
+                "questions": [
+                    {
+                        "id": "misdiagnosis_events",
+                        "type": "repeatable_misdiagnosis",
+                    }
+                ]
+            }
+        ]
+    }
+    monkeypatch.setattr(renderer.st, "session_state", {"q_misdiagnosis_events_count": 1})
+
+    renderer.sync_answers_from_widgets(body, answers)
+
+    assert answers["misdiagnosis_events"][0]["misdiagnosis"] == "parapsoriasis"
+
+
 def test_all_tnmb_yaml_options_map_to_component_hints():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
     options_by_export = {

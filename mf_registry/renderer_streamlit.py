@@ -17,6 +17,7 @@ SUBMIT_IN_PROGRESS_STATE_KEY = "survey_submit_in_progress"
 SUBMISSION_RESULT_STATE_KEY = "survey_submission_result"
 NON_DATA_QUESTION_TYPES = {"info_text", "subsection"}
 SKIPPED_ANSWER = "__prefer_not_to_answer__"
+WIDGET_VALUE_MISSING = object()
 MISDIAGNOSIS_OPTIONS = [
     ("parapsoriasis", "副银屑病/副银"),
     ("eczema", "湿疹/皮炎"),
@@ -84,6 +85,7 @@ def render_module_questions(module: dict[str, Any], answers: dict[str, Any]) -> 
         value = render_question(question, index=question_index if is_data_question else None)
         if is_data_question:
             answers[question["id"]] = value
+            st.session_state[ANSWER_STATE_KEY] = answers
 
 
 def render_tnmb_helper_board(answers: dict[str, Any], module: dict[str, Any]) -> None:
@@ -227,7 +229,6 @@ def is_skipped_answer(value: Any) -> bool:
 def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> None:
     for module in body.get("modules", []):
         for question in module.get("questions", []):
-            question_type = question["type"]
             question_id = question["id"]
             key = f"q_{question_id}"
 
@@ -240,57 +241,63 @@ def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> 
                 answers[question_id] = SKIPPED_ANSWER
                 continue
 
-            if question_type in {"text", "textarea", "integer", "decimal", "boolean", "slider_nrs_0_10", "body_area_percent"}:
-                if key in st.session_state:
-                    answers[question_id] = st.session_state[key]
-                continue
+            value = answer_from_widget_state(question, key)
+            if value is not WIDGET_VALUE_MISSING:
+                answers[question_id] = value
 
-            if question_type == "year" and key in st.session_state:
-                value = st.session_state[key]
-                answers[question_id] = int(value) if value else None
-                continue
 
-            if question_type == "month":
-                year_key = f"{key}_year"
-                month_key = f"{key}_month"
-                if year_key not in st.session_state and month_key not in st.session_state:
-                    continue
-                year = st.session_state.get(year_key)
-                month = st.session_state.get(month_key)
-                answers[question_id] = f"{int(year):04d}-{int(month):02d}" if year and month else None
-                continue
+def answer_from_widget_state(question: dict[str, Any], key: str) -> Any:
+    # Widgets not present in the current rerun must not clear the canonical answer.
+    question_type = question["type"]
 
-            if question_type == "date" and key in st.session_state:
-                value = st.session_state[key]
-                answers[question_id] = value.isoformat() if value else None
-                continue
+    if question_type in {"text", "textarea", "integer", "decimal", "boolean", "slider_nrs_0_10", "body_area_percent"}:
+        return st.session_state[key] if key in st.session_state else WIDGET_VALUE_MISSING
 
-            if question_type == "single_select" and key in st.session_state:
-                selected = st.session_state[key]
-                answers[question_id] = value_from_option_label(question, selected)
-                continue
+    if question_type == "year":
+        if key not in st.session_state:
+            return WIDGET_VALUE_MISSING
+        value = st.session_state[key]
+        return int(value) if value else None
 
-            if question_type == "multiselect" and key in st.session_state:
-                selected = set(st.session_state[key])
-                answers[question_id] = [
-                    option["value"] for option in question["options"] if option["label"] in selected
-                ]
-                continue
+    if question_type == "month":
+        year_key = f"{key}_year"
+        month_key = f"{key}_month"
+        if year_key not in st.session_state and month_key not in st.session_state:
+            return WIDGET_VALUE_MISSING
+        year = st.session_state.get(year_key)
+        month = st.session_state.get(month_key)
+        return f"{int(year):04d}-{int(month):02d}" if year and month else None
 
-            if question_type == "region_select":
-                province_key = f"{key}_province"
-                city_key = f"{key}_city"
-                if province_key not in st.session_state and city_key not in st.session_state:
-                    continue
-                province = st.session_state.get(province_key)
-                city = st.session_state.get(city_key)
-                answers[question_id] = {"province": province, "city": city} if province and city else None
-                continue
+    if question_type == "date":
+        if key not in st.session_state:
+            return WIDGET_VALUE_MISSING
+        value = st.session_state[key]
+        return value.isoformat() if value else None
 
-            if question_type == "repeatable_misdiagnosis":
-                if f"{key}_count" not in st.session_state:
-                    continue
-                answers[question_id] = repeatable_misdiagnosis_from_state(key)
+    if question_type == "single_select":
+        if key not in st.session_state:
+            return WIDGET_VALUE_MISSING
+        return value_from_option_label(question, st.session_state[key])
+
+    if question_type == "multiselect":
+        if key not in st.session_state:
+            return WIDGET_VALUE_MISSING
+        selected = set(st.session_state[key])
+        return [option["value"] for option in question["options"] if option["label"] in selected]
+
+    if question_type == "region_select":
+        province_key = f"{key}_province"
+        city_key = f"{key}_city"
+        if province_key not in st.session_state and city_key not in st.session_state:
+            return WIDGET_VALUE_MISSING
+        province = st.session_state.get(province_key)
+        city = st.session_state.get(city_key)
+        return {"province": province, "city": city} if province and city else None
+
+    if question_type == "repeatable_misdiagnosis":
+        return repeatable_misdiagnosis_widget_snapshot(key)
+
+    return WIDGET_VALUE_MISSING
 
 
 def value_from_option_label(question: dict[str, Any], selected: Any) -> str | None:
@@ -915,7 +922,7 @@ def render_repeatable_misdiagnosis(question: dict[str, Any], key: str) -> list[d
                     "misdiagnosis_other": disease_other or None,
                 }
             )
-    return events
+    return compact_misdiagnosis_events(events)
 
 
 def repeatable_misdiagnosis_from_state(key: str) -> list[dict[str, Any]]:
@@ -940,7 +947,39 @@ def repeatable_misdiagnosis_from_state(key: str) -> list[dict[str, Any]]:
                 "misdiagnosis_other": disease_other,
             }
         )
-    return events
+    return compact_misdiagnosis_events(events)
+
+
+def repeatable_misdiagnosis_widget_snapshot(key: str) -> Any:
+    count_key = f"{key}_count"
+    if count_key not in st.session_state:
+        return WIDGET_VALUE_MISSING
+
+    count = int(st.session_state.get(count_key, 0) or 0)
+    if count == 0:
+        return []
+
+    if not has_any_repeatable_misdiagnosis_child_state(key, count):
+        return WIDGET_VALUE_MISSING
+
+    return repeatable_misdiagnosis_from_state(key)
+
+
+def has_any_repeatable_misdiagnosis_child_state(key: str, count: int) -> bool:
+    child_suffixes = (
+        "year",
+        "month",
+        "region_province",
+        "region_city",
+        "hospital_level",
+        "disease",
+        "disease_other",
+    )
+    return any(f"{key}_{index}_{suffix}" in st.session_state for index in range(count) for suffix in child_suffixes)
+
+
+def compact_misdiagnosis_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [event for event in events if any(event.get(field) for field in event)]
 
 
 def render_region_inline(key: str) -> dict[str, str] | None:
