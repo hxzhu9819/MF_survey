@@ -6,11 +6,10 @@ import secrets
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator, NamedTuple
 
 from mf_registry.derived import ALGORITHM_VERSION, derive_variables
 from mf_registry.identity import FollowupIdentityInput, build_followup_identity, hash_retrieval_key
@@ -33,8 +32,7 @@ _POSTGRES_SCHEMA_READY_KEYS: set[str] = set()
 _POSTGRES_SCHEMA_READY_LOCK = Lock()
 
 
-@dataclass(frozen=True)
-class SavedSubmission:
+class SavedSubmission(NamedTuple):
     participant_id: str
     public_code: str
     session_id: str
@@ -42,8 +40,7 @@ class SavedSubmission:
     retrieval_key: str | None = None
 
 
-@dataclass(frozen=True)
-class DatabaseStatus:
+class DatabaseStatus(NamedTuple):
     backend: str
     configured: bool
     target: str

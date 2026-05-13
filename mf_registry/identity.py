@@ -5,21 +5,19 @@ import hashlib
 import hmac
 import os
 import secrets
-from dataclasses import dataclass
+from typing import NamedTuple
 
 
 LOCAL_PEPPER = "LOCAL_PROTOTYPE_CHANGE_ME"
 
 
-@dataclass(frozen=True)
-class FollowupIdentityInput:
+class FollowupIdentityInput(NamedTuple):
     contact_type: str
     contact_value: str
     consent_to_followup: bool
 
 
-@dataclass(frozen=True)
-class FollowupIdentityMaterial:
+class FollowupIdentityMaterial(NamedTuple):
     contact_type: str
     contact_hash: str
     consent_to_followup: bool
