@@ -215,6 +215,8 @@ def init_db(connection) -> None:
 def register_questionnaire(
     connection,
     bundle: "QuestionnaireBundle",
+    *,
+    commit: bool = True,
 ) -> str:
     existing = execute(
         connection,
@@ -222,7 +224,8 @@ def register_questionnaire(
         (bundle.sha256,),
     ).fetchone()
     if existing:
-        connection.commit()
+        if commit:
+            connection.commit()
         return str(existing["id"])
 
     version_id = str(uuid.uuid4())
@@ -245,7 +248,8 @@ def register_questionnaire(
             now,
         ),
     )
-    connection.commit()
+    if commit:
+        connection.commit()
     return version_id
 
 
@@ -257,7 +261,6 @@ def save_submission(
     followup_identity: FollowupIdentityInput | None = None,
 ) -> SavedSubmission:
     init_db(connection)
-    questionnaire_version_id = register_questionnaire(connection, bundle)
     identity_material = build_followup_identity(followup_identity)
     existing_participant = None
     participant_id = existing_participant["id"] if existing_participant else str(uuid.uuid4())
@@ -267,6 +270,7 @@ def save_submission(
     now = _now()
 
     with transaction(connection):
+        questionnaire_version_id = register_questionnaire(connection, bundle, commit=False)
         if existing_participant:
             execute(
                 connection,

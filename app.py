@@ -1614,8 +1614,10 @@ def render_survey(bundle) -> None:
             with closing(open_database_connection()) as connection:
                 saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
                 database_status = describe_connection(connection)
-        except Exception:
+        except Exception as error:
             st.error("暂时无法保存问卷。请稍后再试，或联系研究者检查数据库连接。")
+            with st.expander("技术信息"):
+                st.code(str(error))
             return
         render_submission_success(saved, database_status)
 
