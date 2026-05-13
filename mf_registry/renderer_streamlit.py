@@ -13,6 +13,7 @@ from mf_registry.regions import REGIONS
 ANSWER_STATE_KEY = "survey_answers"
 STEP_STATE_KEY = "survey_step"
 NON_DATA_QUESTION_TYPES = {"info_text", "subsection"}
+SKIPPED_ANSWER = "__prefer_not_to_answer__"
 MISDIAGNOSIS_OPTIONS = [
     ("parapsoriasis", "副银屑病/副银"),
     ("eczema", "湿疹/皮炎"),
@@ -48,7 +49,7 @@ def render_questionnaire_wizard(body: dict[str, Any]) -> tuple[dict[str, Any], b
 
     answers = st.session_state[ANSWER_STATE_KEY]
     sync_answers_from_widgets(body, answers)
-    render_level_map(modules, current_step, answers)
+    render_level_map(body, modules, current_step, answers)
     completion = completion_percent(body, answers)
     st.progress(completion / 100, text=f"已完成 {completion}%")
 
@@ -185,7 +186,7 @@ TNMB_STAGE_LABELS = {
 
 
 def numeric_value(value: Any) -> float | None:
-    if value in (None, ""):
+    if value in (None, "", SKIPPED_ANSWER):
         return None
     try:
         return float(value)
@@ -209,9 +210,15 @@ def current_question_value(
 
 def current_numeric_value(answers: dict[str, Any], question_id: str) -> float | None:
     key = f"q_{question_id}"
+    if st.session_state.get(f"{key}_skip") or st.session_state.get(f"{key}_unknown"):
+        return None
     if key in st.session_state:
         return numeric_value(st.session_state.get(key))
     return numeric_value(answers.get(question_id))
+
+
+def is_skipped_answer(value: Any) -> bool:
+    return value == SKIPPED_ANSWER
 
 
 def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> None:
@@ -221,11 +228,13 @@ def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> 
             question_id = question["id"]
             key = f"q_{question_id}"
 
-            if st.session_state.get(f"{key}_unknown"):
-                answers[question_id] = None
+            unknown_key = f"{key}_unknown"
+            skip_key = f"{key}_skip"
+            if st.session_state.get(unknown_key):
+                answers[question_id] = SKIPPED_ANSWER
                 continue
-            if st.session_state.get(f"{key}_skip"):
-                answers[question_id] = None
+            if st.session_state.get(skip_key):
+                answers[question_id] = SKIPPED_ANSWER
                 continue
 
             if question_type in {"text", "textarea", "integer", "decimal", "boolean", "slider_nrs_0_10", "body_area_percent"}:
@@ -239,8 +248,12 @@ def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> 
                 continue
 
             if question_type == "month":
-                year = st.session_state.get(f"{key}_year")
-                month = st.session_state.get(f"{key}_month")
+                year_key = f"{key}_year"
+                month_key = f"{key}_month"
+                if year_key not in st.session_state and month_key not in st.session_state and unknown_key not in st.session_state:
+                    continue
+                year = st.session_state.get(year_key)
+                month = st.session_state.get(month_key)
                 answers[question_id] = f"{int(year):04d}-{int(month):02d}" if year and month else None
                 continue
 
@@ -262,9 +275,19 @@ def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> 
                 continue
 
             if question_type == "region_select":
-                province = st.session_state.get(f"{key}_province")
-                city = st.session_state.get(f"{key}_city")
+                province_key = f"{key}_province"
+                city_key = f"{key}_city"
+                if province_key not in st.session_state and city_key not in st.session_state:
+                    continue
+                province = st.session_state.get(province_key)
+                city = st.session_state.get(city_key)
                 answers[question_id] = {"province": province, "city": city} if province and city else None
+                continue
+
+            if question_type == "repeatable_misdiagnosis":
+                if f"{key}_count" not in st.session_state:
+                    continue
+                answers[question_id] = repeatable_misdiagnosis_from_state(key)
 
 
 def value_from_option_label(question: dict[str, Any], selected: Any) -> str | None:
@@ -286,6 +309,13 @@ def restore_question_state(question: dict[str, Any], key: str, answers: dict[str
 
     value = answers.get(question_id)
     question_type = question["type"]
+
+    if is_skipped_answer(value):
+        if question.get("allow_unknown"):
+            st.session_state[f"{key}_unknown"] = True
+        elif question_type in {"slider_nrs_0_10", "body_area_percent"} and not question.get("required"):
+            st.session_state[f"{key}_skip"] = True
+        return
 
     if question_type in {"text", "textarea"}:
         set_state_if_absent(key, value or "")
@@ -398,6 +428,7 @@ def set_state_if_absent(key: str, value: Any) -> None:
 
 
 def render_level_map(
+    body: dict[str, Any],
     modules: list[dict[str, Any]],
     current_step: int,
     answers: dict[str, Any],
@@ -442,14 +473,20 @@ def render_level_map(
         for column_index, level in enumerate(row_levels):
             level_index = start + column_index
             with columns[column_index]:
-                if st.button(
+                st.button(
                     level["label"],
                     key=f"level_map_{level_index}",
                     width="stretch",
-                ):
-                    st.session_state[STEP_STATE_KEY] = level["target"]
-                    st.rerun()
+                    on_click=save_current_answers_and_jump,
+                    args=(body, answers, level["target"]),
+                )
     st.markdown('<div class="mf-level-map-native-end"></div>', unsafe_allow_html=True)
+
+
+def save_current_answers_and_jump(body: dict[str, Any], answers: dict[str, Any], target_step: int) -> None:
+    sync_answers_from_widgets(body, answers)
+    st.session_state[ANSWER_STATE_KEY] = answers
+    st.session_state[STEP_STATE_KEY] = target_step
 
 
 def render_level_map_styles(levels: list[dict[str, Any]], row_size: int) -> None:
@@ -582,7 +619,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             label_visibility="collapsed",
         )
         if question.get("allow_unknown") and st.checkbox("我不确定，先留空", key=f"{key}_unknown"):
-            return None
+            return SKIPPED_ANSWER
         return value
 
     if question_type == "decimal":
@@ -608,7 +645,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
             help=help_text,
         )
         if question.get("allow_unknown") and st.checkbox("我不确定，先留空", key=f"{key}_unknown"):
-            return None
+            return SKIPPED_ANSWER
         return int(value) if value else None
 
     if question_type == "month":
@@ -629,7 +666,7 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
                 key=f"{key}_month",
             )
         if question.get("allow_unknown") and st.checkbox("我不确定，先留空", key=f"{key}_unknown"):
-            return None
+            return SKIPPED_ANSWER
         if year and month:
             return f"{int(year):04d}-{int(month):02d}"
         return None
@@ -672,13 +709,13 @@ def render_question(question: dict[str, Any], index: int | None = None) -> Any:
         anchors = question.get("anchors", {})
         value = render_nrs_buttons(key, anchors, help_text)
         if not question.get("required") and st.checkbox("暂时无法判断，先留空", key=f"{key}_skip"):
-            return None
+            return SKIPPED_ANSWER
         return value
 
     if question_type == "body_area_percent":
         value = st.slider("百分比", min_value=0, max_value=100, value=0, key=key, help=help_text)
         if not question.get("required") and st.checkbox("暂时无法判断，先留空", key=f"{key}_skip"):
-            return None
+            return SKIPPED_ANSWER
         return value
 
     if question_type == "region_select":
@@ -846,6 +883,31 @@ def render_repeatable_misdiagnosis(question: dict[str, Any], key: str) -> list[d
     return events
 
 
+def repeatable_misdiagnosis_from_state(key: str) -> list[dict[str, Any]]:
+    count = int(st.session_state.get(f"{key}_count", 0) or 0)
+    hospital_label_by_value = dict(HOSPITAL_LEVEL_OPTIONS)
+    disease_label_by_value = dict(MISDIAGNOSIS_OPTIONS)
+    events: list[dict[str, Any]] = []
+    for index in range(count):
+        year = st.session_state.get(f"{key}_{index}_year")
+        month = st.session_state.get(f"{key}_{index}_month")
+        province = st.session_state.get(f"{key}_{index}_region_province")
+        city = st.session_state.get(f"{key}_{index}_region_city")
+        hospital_level_label = st.session_state.get(f"{key}_{index}_hospital_level", "请选择")
+        disease_label = st.session_state.get(f"{key}_{index}_disease", "请选择")
+        disease_other = st.session_state.get(f"{key}_{index}_disease_other") or None
+        events.append(
+            {
+                "visit_month": f"{int(year):04d}-{int(month):02d}" if year and month else None,
+                "care_region": {"province": province, "city": city} if province and city else None,
+                "hospital_level": _value_from_label(hospital_level_label, hospital_label_by_value),
+                "misdiagnosis": _value_from_label(disease_label, disease_label_by_value),
+                "misdiagnosis_other": disease_other,
+            }
+        )
+    return events
+
+
 def render_region_inline(key: str) -> dict[str, str] | None:
     province_col, city_col = st.columns(2, gap="small")
     provinces = [None, *REGIONS.keys()]
@@ -924,6 +986,8 @@ def missing_required_questions(body: dict[str, Any], answers: dict[str, Any]) ->
 
 
 def is_answered(value: Any, question: dict[str, Any]) -> bool:
+    if is_skipped_answer(value):
+        return True
     if question["type"] == "boolean":
         return value is True
     return value not in (None, "", [])
