@@ -48,9 +48,16 @@ def cached_questionnaire(path: str, mtime: float):
 
 
 def open_database_connection():
+    if postgres_required() and not os.getenv("MF_REGISTRY_DATABASE_URL"):
+        raise RuntimeError("MF_REGISTRY_REQUIRE_POSTGRES=true，但未配置 MF_REGISTRY_DATABASE_URL。为避免真实问卷写入临时 SQLite，已阻止保存。")
     connection = connect()
     init_db(connection)
     return connection
+
+
+def postgres_required() -> bool:
+    value = os.getenv("MF_REGISTRY_REQUIRE_POSTGRES", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def main() -> None:
@@ -84,6 +91,7 @@ def configure_runtime_secrets() -> None:
         "MF_REGISTRY_ADMIN_PASSWORD",
         "MF_REGISTRY_SQLITE_PATH",
         "MF_REGISTRY_DATABASE_URL",
+        "MF_REGISTRY_REQUIRE_POSTGRES",
     ):
         value = read_secret(name)
         if value and not os.getenv(name):
@@ -1512,7 +1520,7 @@ def render_resources() -> None:
     )
 
 
-def render_submission_success(saved) -> None:
+def render_submission_success(saved, database_status=None) -> None:
     cards = [
         ("匿名编号", "以后与研究团队沟通、核对提交记录时使用", saved.public_code)
     ]
@@ -1548,6 +1556,11 @@ def render_submission_success(saved) -> None:
                 st.markdown(f"**{description}**")
                 st.code(value)
     st.info(reminder)
+    if database_status:
+        if database_status.configured and database_status.healthy:
+            st.caption(f"已保存到 {database_status.backend}。")
+        else:
+            st.warning("本次提交没有保存到 Supabase/Postgres，而是保存到了本地开发数据库。部署试用时请检查 Streamlit secrets 中的 MF_REGISTRY_DATABASE_URL。")
 
 
 def render_survey(bundle) -> None:
@@ -1598,10 +1611,11 @@ def render_survey(bundle) -> None:
         try:
             with closing(open_database_connection()) as connection:
                 saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
+                database_status = describe_connection(connection)
         except Exception:
             st.error("暂时无法保存问卷。请稍后再试，或联系研究者检查数据库连接。")
             return
-        render_submission_success(saved)
+        render_submission_success(saved, database_status)
 
 
 def render_followup_identity() -> FollowupIdentityInput | None:

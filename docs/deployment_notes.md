@@ -35,6 +35,7 @@ Use this for a small usability test with de-identified or intentionally fake dat
 ```toml
 MF_REGISTRY_ADMIN_PASSWORD = "replace-with-a-strong-password"
 MF_REGISTRY_DATABASE_URL = "postgresql://postgres.PROJECT_REF:password@aws-0-region.pooler.supabase.com:6543/postgres"
+MF_REGISTRY_REQUIRE_POSTGRES = "true"
 
 # Optional. Set this only when you are ready to test long-term follow-up identity.
 MF_REGISTRY_IDENTITY_PEPPER = "replace-with-a-long-random-secret"
@@ -60,9 +61,10 @@ Streamlit Community Cloud may be slow or intermittently inaccessible from mainla
 1. Create a free Postgres project.
 2. Copy the project connection string. For hosted Streamlit, prefer Supabase's pooler URL because direct database connections may be unavailable from some environments.
 3. Store the URL in Streamlit secrets as `MF_REGISTRY_DATABASE_URL`.
-4. Deploy or restart the app. On startup, the app creates the required tables from `migrations/001_init.sql` if they do not already exist.
-5. Complete one test questionnaire, test retrieval-key lookup if follow-up identity is enabled, and test researcher export/CSV download.
-6. In Supabase, confirm the rows appear in `participants`, `survey_sessions`, `answers`, and `derived_variables`.
+4. Set `MF_REGISTRY_REQUIRE_POSTGRES = "true"` for any real beta deployment. This prevents successful-looking submissions from being written to Streamlit's temporary local SQLite database when the Supabase URL is missing or mistyped.
+5. Deploy or restart the app. On startup, the app creates the required tables from `migrations/001_init.sql` if they do not already exist.
+6. Complete one test questionnaire, test retrieval-key lookup if follow-up identity is enabled, and test researcher export/CSV download.
+7. In Supabase, confirm the rows appear in `participants`, `survey_sessions`, `answers`, and `derived_variables`.
 
 ## Streamlit Secrets Example
 
@@ -72,6 +74,7 @@ Do not commit this file.
 MF_REGISTRY_DATABASE_URL = "postgresql://..."
 MF_REGISTRY_ADMIN_PASSWORD = "replace-this"
 MF_REGISTRY_IDENTITY_PEPPER = "replace-with-long-random-secret"
+MF_REGISTRY_REQUIRE_POSTGRES = "true"
 ```
 
 ## Database Sync Strategy
