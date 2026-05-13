@@ -3,7 +3,7 @@ questionnaire:
   version: "2026.05.12.2"
   language: zh-CN
   title: "蕈样肉芽肿患者基线问卷"
-  description: "用于患者共研 Beta 试用的自填问卷。除非自愿选择长期随访身份，请不要填写真实姓名、身份证号、手机号或详细住址。"
+  description: "用于患者共研 Beta 试用的自填问卷。请不要填写真实姓名、身份证号、手机号、微信号或详细住址。"
   consent_version: "2026.05.11"
 
 modules:

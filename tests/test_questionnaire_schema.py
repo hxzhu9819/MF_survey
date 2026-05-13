@@ -184,6 +184,30 @@ def test_export_dataframe_normalizes_mixed_values_for_streamlit():
     assert dataframe.loc[1, "selected"] == '["a", "b"]'
 
 
+def test_anonymous_submission_gets_retrieval_key_without_contact():
+    bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
+    answers = {
+        question["id"]: sample_answer_for_question(question)
+        for question in bundle.questions
+        if question["type"] not in NON_DATA_TYPES
+    }
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    init_db(connection)
+
+    saved = save_submission(connection, bundle, answers, completion_percent=100)
+
+    assert saved.followup_public_key
+    assert saved.retrieval_key
+    followup_row = connection.execute(
+        "select contact_type, consent_to_followup from participant_followup_keys where participant_id = ?",
+        (saved.participant_id,),
+    ).fetchone()
+    assert followup_row["contact_type"] == "none"
+    assert followup_row["consent_to_followup"] == 0
+    assert find_participant_by_retrieval_key(connection, saved.retrieval_key)["public_code"] == saved.public_code
+
+
 def test_hidden_month_widget_does_not_overwrite_saved_answer():
     body = {
         "modules": [
@@ -252,9 +276,10 @@ def test_followup_identity_stores_hashes_but_never_exports_raw_contact():
         )
 
         followup_row = connection.execute(
-            "select public_key, retrieval_key_hash, contact_type, contact_hash from participant_followup_keys"
+            "select public_key, retrieval_key_hash, contact_type, contact_hash, consent_to_followup from participant_followup_keys"
         ).fetchone()
         assert followup_row["contact_type"] == "wechat"
+        assert followup_row["consent_to_followup"] == 1
         assert followup_row["public_key"] == saved.followup_public_key
         assert "Raw_Wechat_ID_123" not in dict(followup_row).values()
         assert find_participant_by_retrieval_key(connection, saved.retrieval_key)["public_code"] == saved.public_code

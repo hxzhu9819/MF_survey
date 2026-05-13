@@ -1531,7 +1531,7 @@ def render_submission_success(saved) -> None:
             saved.public_code,
         )
     ]
-    reminder = "请保存匿名编号。您没有开启长期随访身份，本次提交仍会匿名记录。"
+    reminder = "请同时保存匿名编号和找回密钥。找回密钥不会以明文保存，系统之后无法替您查看原文。"
 
     if saved.followup_public_key:
         cards.append(
@@ -1589,8 +1589,9 @@ def render_survey(bundle) -> None:
         st.markdown(
             """
             - 这是一份患者共研问卷，不提供诊断或治疗建议。
-            - 除非您自愿选择长期随访身份，否则请不要填写任何可直接识别个人身份的信息。
-            - 长期随访身份目前仅支持微信号生成哈希；系统不保存明文微信号，也不会把微信号导出到研究表格。
+            - 请不要填写任何可直接识别个人身份的信息。
+            - 系统会为每次提交生成匿名随访身份；请保存 retrieval key，用于未来诊断更新或随访。
+            - Beta 阶段暂不收集微信号或其他联系方式；未来如果开放随访提醒，会单独征求同意。
             - 您可以随时停止填写。
             - 提交后，系统会保存您的匿名答案，用于完善问卷结构、导出和后续随访流程。
             - Beta 试用阶段的数据会在分析时明确标记问卷版本和收集阶段。
@@ -1624,41 +1625,25 @@ def render_survey(bundle) -> None:
 
 def render_followup_identity() -> FollowupIdentityInput | None:
     with st.container(border=True):
-        st.markdown("### 长期随访身份")
+        st.markdown("### 匿名随访身份与提醒")
         if using_local_pepper():
-            st.info("长期随访身份暂未开放。您仍然可以继续填写并匿名提交本次问卷。")
-            return None
+            st.info("当前使用本地测试密钥。正式部署时请配置 MF_REGISTRY_IDENTITY_PEPPER，确保找回密钥哈希稳定。")
         st.markdown(
             """
             <div class="mf-intro">
-              <div class="mf-intro-title">这一部分完全自愿</div>
+              <div class="mf-intro-title">匿名随访身份会自动生成</div>
               <div class="mf-intro-body">
-                如果您愿意未来每隔一段时间回来填写随访问卷，可以用微信号生成一个稳定的随访身份。
-                跳过不会影响本次问卷。系统会把微信号标准化后用服务端密钥做 HMAC 哈希，
-                只保存哈希和 public key；明文微信号不会保存，也不会出现在 CSV 导出中。
+                提交后每位参与者都会得到 public key 和 retrieval key。
+                未来填写诊断更新或随访问卷时，可以用 retrieval key 连接到同一位匿名参与者；
+                这不需要提供微信号或其他联系方式。
               </div>
             </div>
             """
             ,
             unsafe_allow_html=True,
         )
-        consent_to_followup = st.checkbox("我愿意使用微信号生成长期随访身份", key="followup_consent")
-        if not consent_to_followup:
-            return None
-        wechat_id = st.text_input(
-            "微信号",
-            key="followup_wechat",
-            help="建议填写微信号而不是昵称。系统不会保存明文，但请确认您理解这是可识别信息的哈希化处理。",
-        )
-        st.caption("提交后您会得到 public key 和 retrieval key。public key 可用于研究匹配；retrieval key 只给本人保存。")
-        if not wechat_id.strip():
-            st.info("如选择长期随访，请填写微信号；否则可以取消上方勾选。")
-            return None
-        return FollowupIdentityInput(
-            contact_type="wechat",
-            contact_value=wechat_id,
-            consent_to_followup=True,
-        )
+        st.caption("Beta 阶段暂不收集微信号或其他联系方式。随访提醒需要单独的伦理说明、可撤回同意和安全的联系方式保存方案，之后再开放。")
+        return None
 
 
 def render_retrieval() -> None:

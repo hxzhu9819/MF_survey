@@ -22,21 +22,27 @@ class FollowupIdentityInput:
 class FollowupIdentityMaterial:
     contact_type: str
     contact_hash: str
+    consent_to_followup: bool
     public_key: str
     retrieval_key: str
     retrieval_key_hash: str
 
 
-def build_followup_identity(identity: FollowupIdentityInput) -> FollowupIdentityMaterial | None:
-    if not identity.consent_to_followup:
-        return None
-    normalized = normalize_contact(identity.contact_type, identity.contact_value)
-    if not normalized:
-        return None
-
+def build_followup_identity(identity: FollowupIdentityInput | None = None) -> FollowupIdentityMaterial:
     pepper = get_identity_pepper()
-    contact_hash = _hmac_hex(pepper, f"contact:{identity.contact_type}:{normalized}")
-    public_key = "MF-PUB-" + _hmac_token(pepper, f"public:{identity.contact_type}:{normalized}", 14)
+    contact_type = "none"
+    contact_hash_source = "none"
+    consent_to_followup = False
+
+    if identity and identity.consent_to_followup:
+        normalized = normalize_contact(identity.contact_type, identity.contact_value)
+        if normalized:
+            contact_type = identity.contact_type
+            contact_hash_source = f"{identity.contact_type}:{normalized}"
+            consent_to_followup = True
+
+    public_key = "MF-PUB-" + secrets.token_urlsafe(10).replace("_", "A").replace("-", "B").upper()
+    contact_hash = _hmac_hex(pepper, f"contact:{contact_hash_source}:{public_key}")
 
     # The retrieval key is intentionally not derivable from the public key.
     # The participant should keep it like a password for future follow-up.
@@ -44,8 +50,9 @@ def build_followup_identity(identity: FollowupIdentityInput) -> FollowupIdentity
     retrieval_key_hash = _hmac_hex(pepper, f"retrieval:{retrieval_key}")
 
     return FollowupIdentityMaterial(
-        contact_type=identity.contact_type,
+        contact_type=contact_type,
         contact_hash=contact_hash,
+        consent_to_followup=consent_to_followup,
         public_key=public_key,
         retrieval_key=retrieval_key,
         retrieval_key_hash=retrieval_key_hash,

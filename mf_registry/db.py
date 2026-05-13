@@ -261,8 +261,8 @@ def save_submission(
 ) -> SavedSubmission:
     init_db(connection)
     questionnaire_version_id = register_questionnaire(connection, bundle)
-    identity_material = build_followup_identity(followup_identity) if followup_identity else None
-    existing_participant = _find_participant_by_public_key(connection, identity_material.public_key) if identity_material else None
+    identity_material = build_followup_identity(followup_identity)
+    existing_participant = None
     participant_id = existing_participant["id"] if existing_participant else str(uuid.uuid4())
     public_code = existing_participant["public_code"] if existing_participant else _make_public_code(connection)
     consent_id = str(uuid.uuid4())
@@ -282,27 +282,26 @@ def save_submission(
                 "insert into participants (id, public_code, created_at, status) values (?, ?, ?, ?)",
                 (participant_id, public_code, now, "active"),
             )
-            if identity_material:
-                execute(
-                    connection,
-                    """
-                    insert into participant_followup_keys (
-                      id, participant_id, public_key, retrieval_key_hash, contact_type, contact_hash,
-                      consent_to_followup, created_at, last_seen_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(uuid.uuid4()),
-                        participant_id,
-                        identity_material.public_key,
-                        identity_material.retrieval_key_hash,
-                        identity_material.contact_type,
-                        identity_material.contact_hash,
-                        bool_value(connection, True),
-                        now,
-                        now,
-                    ),
-                )
+            execute(
+                connection,
+                """
+                insert into participant_followup_keys (
+                  id, participant_id, public_key, retrieval_key_hash, contact_type, contact_hash,
+                  consent_to_followup, created_at, last_seen_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    participant_id,
+                    identity_material.public_key,
+                    identity_material.retrieval_key_hash,
+                    identity_material.contact_type,
+                    identity_material.contact_hash,
+                    bool_value(connection, identity_material.consent_to_followup),
+                    now,
+                    now,
+                ),
+            )
         execute(
             connection,
             "insert into consents (id, participant_id, consent_version, accepted_at) values (?, ?, ?, ?)",
@@ -376,8 +375,8 @@ def save_submission(
         participant_id=participant_id,
         public_code=public_code,
         session_id=session_id,
-        followup_public_key=identity_material.public_key if identity_material else None,
-        retrieval_key=identity_material.retrieval_key if identity_material and not existing_participant else None,
+        followup_public_key=identity_material.public_key,
+        retrieval_key=identity_material.retrieval_key if not existing_participant else None,
     )
 
 
