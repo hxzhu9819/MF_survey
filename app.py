@@ -1512,30 +1512,15 @@ def render_resources() -> None:
     )
 
 
-def credential_card(title: str, description: str, value: str, important: bool = False) -> str:
-    variant = " important" if important else ""
-    return f"""
-      <div class="mf-credential{variant}">
-        <small>{html.escape(title)}</small>
-        <strong>{html.escape(description)}</strong>
-        <code>{html.escape(value)}</code>
-      </div>
-    """
-
-
 def render_submission_success(saved) -> None:
     cards = [
-        credential_card(
-            "匿名编号",
-            "以后与研究团队沟通、核对提交记录时使用",
-            saved.public_code,
-        )
+        ("匿名编号", "以后与研究团队沟通、核对提交记录时使用", saved.public_code)
     ]
     reminder = "请同时保存匿名编号和找回密钥。找回密钥不会以明文保存，系统之后无法替您查看原文。"
 
     if saved.followup_public_key:
         cards.append(
-            credential_card(
+            (
                 "Public key",
                 "可公开用于研究匹配，不等同于联系方式",
                 saved.followup_public_key,
@@ -1543,30 +1528,26 @@ def render_submission_success(saved) -> None:
         )
         if saved.retrieval_key:
             cards.append(
-                credential_card(
+                (
                     "找回密钥",
                     "只显示这一次，请像保存密码一样保存",
                     saved.retrieval_key,
-                    important=True,
                 )
             )
             reminder = "找回密钥不会以明文保存，系统之后无法替您查看原文。"
         else:
             reminder = "检测到同一随访身份已存在，本次答案已关联到原有匿名参与者。"
 
-    st.markdown(
-        f"""
-        <section class="mf-submit-success">
-          <h2>感谢您完成这份问卷</h2>
-          <p>您的回答会帮助我们把 MF 患者的诊断经历、分期线索、治疗反应和真实需求整理得更清楚。下面是本次提交后需要保存的信息。</p>
-          <div class="mf-credential-grid">
-            {''.join(cards)}
-          </div>
-          <div class="mf-submit-reminder">{html.escape(reminder)}</div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.success("感谢您完成这份问卷")
+    st.write("您的回答会帮助我们把 MF 患者的诊断经历、分期线索、治疗反应和真实需求整理得更清楚。下面是本次提交后需要保存的信息。")
+    columns = st.columns(len(cards), gap="small")
+    for column, (title, description, value) in zip(columns, cards):
+        with column:
+            with st.container(border=True):
+                st.caption(title)
+                st.markdown(f"**{description}**")
+                st.code(value)
+    st.info(reminder)
 
 
 def render_survey(bundle) -> None:
