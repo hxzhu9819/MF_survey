@@ -20,6 +20,7 @@ from mf_registry.db import (
     connect,
     count_submissions,
     describe_connection,
+    diagnose_retrieval_key,
     diagnostic_table_counts,
     export_rows,
     find_participant_by_retrieval_key,
@@ -1747,6 +1748,7 @@ def render_admin() -> None:
                 st.session_state["admin_export_unlocked"] = False
                 st.rerun()
 
+            render_retrieval_key_diagnostic(connection)
             rows = export_rows(connection)
     except Exception as error:
         st.error("暂时无法连接数据库。请检查 Streamlit secrets、Supabase 项目状态和数据库 URL。")
@@ -1768,6 +1770,31 @@ def render_admin() -> None:
         file_name="mf_registry_export.csv",
         mime="text/csv",
     )
+
+
+def render_retrieval_key_diagnostic(connection) -> None:
+    with st.expander("按 retrieval key 检查一条提交", expanded=False):
+        retrieval_key = st.text_input("Retrieval key", type="password", key="admin_retrieval_diagnostic")
+        if not st.button("检查 retrieval key", key="admin_retrieval_diagnostic_button"):
+            return
+        if not retrieval_key.strip():
+            st.warning("请先输入 retrieval key。")
+            return
+        row = diagnose_retrieval_key(connection, retrieval_key)
+        if not row:
+            st.error("当前数据源中没有找到这个 retrieval key。请检查提交成功页和研究者导出页是否连接到同一个数据库。")
+            return
+        st.success("当前数据源可以找到这个 retrieval key。")
+        st.write(
+            {
+                "public_code": row["public_code"],
+                "public_key": row["public_key"],
+                "session_count": row["session_count"],
+                "submitted_session_count": row["submitted_session_count"],
+                "answer_count": row["answer_count"],
+                "derived_count": row["derived_count"],
+            }
+        )
 
 
 def render_database_status(connection) -> None:

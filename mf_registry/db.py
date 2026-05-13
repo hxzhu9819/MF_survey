@@ -423,6 +423,40 @@ def find_participant_by_retrieval_key(connection, retrieval_key: str):
     ).fetchone()
 
 
+def diagnose_retrieval_key(connection, retrieval_key: str) -> dict[str, Any] | None:
+    init_db(connection)
+    retrieval_hash = hash_retrieval_key(retrieval_key)
+    row = execute(
+        connection,
+        """
+        select
+          p.id as participant_id,
+          p.public_code,
+          f.public_key,
+          f.created_at as followup_key_created_at,
+          (select count(*) from survey_sessions s where s.participant_id = p.id) as session_count,
+          (select count(*) from survey_sessions s where s.participant_id = p.id and s.submitted_at is not null) as submitted_session_count,
+          (
+            select count(*)
+            from answers a
+            join survey_sessions s on s.id = a.session_id
+            where s.participant_id = p.id
+          ) as answer_count,
+          (
+            select count(*)
+            from derived_variables d
+            join survey_sessions s on s.id = d.session_id
+            where s.participant_id = p.id
+          ) as derived_count
+        from participant_followup_keys f
+        join participants p on p.id = f.participant_id
+        where f.retrieval_key_hash = ?
+        """,
+        (retrieval_hash,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def count_submissions(connection) -> int:
     init_db(connection)
     row = execute(connection, "select count(*) as count from survey_sessions where submitted_at is not null").fetchone()
