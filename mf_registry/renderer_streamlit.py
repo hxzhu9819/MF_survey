@@ -481,7 +481,7 @@ def render_review_step(schema: QuestionnaireSchema, answers: dict[str, Any]) -> 
     completion = completion_percent(schema, answers)
     st.metric("完成度", f"{completion}%")
     if missing:
-        st.warning("还有必填项未完成：" + "、".join(item["label"] for item in missing))
+        st.warning("还有必填项未完成：" + "、".join(item.label for item in missing))
     else:
         st.success("必填项已完成，可以提交。")
 
