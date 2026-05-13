@@ -79,7 +79,7 @@ def render_questionnaire_wizard(schema: QuestionnaireSchema, view_registry: dict
         render_module_intro(module)
         st.caption(f"第 {current_step + 1} 关 / 共 {len(modules)} 关")
         st.divider()
-        render_module_questions(module, answers)
+        render_module_questions(module, answers, context=context)
         if module.derived_view and view_registry and module.derived_view in view_registry:
             view_registry[module.derived_view](answers, module, context)
 
@@ -415,10 +415,10 @@ def save_current_answers_and_jump(schema: QuestionnaireSchema, answers: dict[str
     st.session_state[STEP_STATE_KEY] = target_step
 
 def render_module_intro(module: ModuleSchema) -> None:
-    title = html.escape(str(module.title))
+    title = html.escape(str(module.title or ""))
     description = html.escape(str(module.description or "")).replace("\n", "<br>")
-    why = html.escape(str(module.why_we_ask or ""))
-    why_html = f'<div class="mf-why"><strong>为什么问这个？</strong><span>{why}</span></div>' if why else ""
+    why = html.escape(str(module.why_we_ask or "")).replace("\n", "<br>")
+    why_html = f'<div class="mf-why"><strong>为什么问这个？</strong><div style="margin-top: 0.2rem;">{why}</div></div>' if why else ""
     st.markdown(
         f"""
         <div class="mf-module-intro">
