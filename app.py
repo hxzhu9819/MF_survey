@@ -30,7 +30,13 @@ from mf_registry.db import (
 from mf_registry.export import dataframe_to_csv_bytes, rows_to_dataframe
 from mf_registry.identity import FollowupIdentityInput, using_local_pepper
 from mf_registry.questionnaire_schema import load_questionnaire
-from mf_registry.renderer_streamlit import completion_percent, render_questionnaire_wizard
+from mf_registry.renderer_streamlit import (
+    SUBMISSION_RESULT_STATE_KEY,
+    clear_submission_in_progress,
+    completion_percent,
+    reset_saved_submission,
+    render_questionnaire_wizard,
+)
 
 
 QUESTIONNAIRE_PATH = Path("questionnaires/mf_baseline_2026_05_11.yaml")
@@ -1601,25 +1607,38 @@ def render_survey(bundle) -> None:
 
     followup_identity = render_followup_identity()
 
+    saved_result = st.session_state.get(SUBMISSION_RESULT_STATE_KEY)
+    if saved_result:
+        saved, database_status = saved_result
+        render_submission_success(saved, database_status)
+        st.button("填写另一份问卷", on_click=reset_saved_submission)
+        return
+
     answers, submitted = render_questionnaire_wizard(bundle.body)
 
     if submitted:
         missing_required = find_missing_required(bundle.body, answers)
         if missing_required:
+            clear_submission_in_progress()
             st.error("以下必填问题尚未完成：" + "、".join(missing_required))
             return
 
         completion = completion_percent(bundle.body, answers)
+        st.info("正在安全保存您的匿名问卷，请不要关闭页面。通常需要几秒钟，网络较慢时可能更久。")
         try:
-            with closing(open_database_connection()) as connection:
-                saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
-                database_status = describe_connection(connection)
+            with st.spinner("正在写入安全数据库..."):
+                with closing(open_database_connection()) as connection:
+                    saved = save_submission(connection, bundle, answers, completion, followup_identity=followup_identity)
+                    database_status = describe_connection(connection)
         except Exception as error:
+            clear_submission_in_progress()
             st.error("暂时无法保存问卷。请稍后再试，或联系研究者检查数据库连接。")
             with st.expander("技术信息"):
                 st.code(str(error))
             return
-        render_submission_success(saved, database_status)
+        st.session_state[SUBMISSION_RESULT_STATE_KEY] = (saved, database_status)
+        clear_submission_in_progress()
+        st.rerun()
 
 
 def render_followup_identity() -> FollowupIdentityInput | None:

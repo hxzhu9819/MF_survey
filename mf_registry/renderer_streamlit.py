@@ -12,6 +12,9 @@ from mf_registry.regions import REGIONS
 
 ANSWER_STATE_KEY = "survey_answers"
 STEP_STATE_KEY = "survey_step"
+SUBMIT_REQUESTED_STATE_KEY = "survey_submit_requested"
+SUBMIT_IN_PROGRESS_STATE_KEY = "survey_submit_in_progress"
+SUBMISSION_RESULT_STATE_KEY = "survey_submission_result"
 NON_DATA_QUESTION_TYPES = {"info_text", "subsection"}
 SKIPPED_ANSWER = "__prefer_not_to_answer__"
 MISDIAGNOSIS_OPTIONS = [
@@ -526,6 +529,9 @@ def render_step_controls(current_step: int, max_step: int) -> None:
 
 
 def render_review_step(body: dict[str, Any], answers: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    submitted = bool(st.session_state.pop(SUBMIT_REQUESTED_STATE_KEY, False))
+    is_saving = bool(st.session_state.get(SUBMIT_IN_PROGRESS_STATE_KEY))
+
     st.markdown("### 确认提交")
     st.markdown(
         """
@@ -543,6 +549,9 @@ def render_review_step(body: dict[str, Any], answers: dict[str, Any]) -> tuple[d
     else:
         st.success("必填项已完成，可以提交。")
 
+    if is_saving:
+        st.info("正在安全保存您的匿名问卷，请不要关闭页面。通常需要几秒钟，网络较慢时可能更久。")
+
     with st.expander("查看各章节完成情况", expanded=True):
         for module in sorted(body.get("modules", []), key=lambda item: item.get("order", 0)):
             questions = [
@@ -553,13 +562,39 @@ def render_review_step(body: dict[str, Any], answers: dict[str, Any]) -> tuple[d
 
     back_col, submit_col = st.columns([1, 1], gap="small")
     with back_col:
-        if st.button("返回上一关", width="stretch"):
+        if st.button("返回上一关", width="stretch", disabled=is_saving):
             st.session_state[STEP_STATE_KEY] = max(len(body.get("modules", [])) - 1, 0)
             st.rerun()
-    confirmed = st.checkbox("我已检查答案，并确认提交本次问卷。当前 Beta 版本提交后不能在页面内直接修改。")
+    confirmed = st.checkbox(
+        "我已检查答案，并确认提交本次问卷。当前 Beta 版本提交后不能在页面内直接修改。",
+        disabled=is_saving,
+    )
     with submit_col:
-        submitted = st.button("确认并提交问卷", type="primary", disabled=bool(missing) or not confirmed, width="stretch")
+        st.button(
+            "正在保存，请稍候" if is_saving else "确认并提交问卷",
+            type="primary",
+            disabled=bool(missing) or not confirmed or is_saving,
+            width="stretch",
+            on_click=request_submission,
+        )
     return answers, submitted
+
+
+def request_submission() -> None:
+    st.session_state[SUBMIT_REQUESTED_STATE_KEY] = True
+    st.session_state[SUBMIT_IN_PROGRESS_STATE_KEY] = True
+
+
+def clear_submission_in_progress() -> None:
+    st.session_state[SUBMIT_IN_PROGRESS_STATE_KEY] = False
+    st.session_state.pop(SUBMIT_REQUESTED_STATE_KEY, None)
+
+
+def reset_saved_submission() -> None:
+    clear_submission_in_progress()
+    st.session_state.pop(SUBMISSION_RESULT_STATE_KEY, None)
+    st.session_state.pop(ANSWER_STATE_KEY, None)
+    st.session_state.pop(STEP_STATE_KEY, None)
 
 
 def render_module_intro(module: dict[str, Any]) -> None:
