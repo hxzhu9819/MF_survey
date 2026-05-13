@@ -372,7 +372,10 @@ def save_submission(
                 ),
             )
 
-    verify_saved_submission(connection, session_id, participant_id, expected_answer_count=len(user_input_questions))
+        verify_saved_submission(connection, session_id, participant_id, expected_answer_count=len(user_input_questions))
+
+    if is_postgres_connection(connection):
+        connection.commit()
 
     return SavedSubmission(
         participant_id=participant_id,
