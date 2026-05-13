@@ -58,7 +58,7 @@ def main() -> None:
     inject_style()
     bundle = cached_questionnaire(str(QUESTIONNAIRE_PATH), QUESTIONNAIRE_PATH.stat().st_mtime)
     requested_page = page_from_query()
-    page_labels = ["项目首页", "资料库", "填写问卷", "找回随访编号", "研究者导出"]
+    page_labels = ["项目首页", "资料库", "填写问卷", "诊断更新/随访", "找回随访编号", "研究者导出"]
     page = requested_page if requested_page in page_labels else "项目首页"
     apply_step_from_query()
 
@@ -70,6 +70,8 @@ def main() -> None:
         render_resources()
     elif page == "填写问卷":
         render_survey(bundle)
+    elif page == "诊断更新/随访":
+        render_followup_placeholder()
     elif page == "找回随访编号":
         render_retrieval()
     else:
@@ -102,6 +104,7 @@ def page_from_query() -> str:
         "home": "项目首页",
         "resources": "资料库",
         "survey": "填写问卷",
+        "followup": "诊断更新/随访",
         "retrieve": "找回随访编号",
         "admin": "研究者导出",
     }.get(page_key, "项目首页")
@@ -125,6 +128,7 @@ def render_top_nav(current_page: str, version: str) -> None:
         ("首页", "home", "项目首页", "nav_home"),
         ("资料库", "resources", "资料库", "nav_resources"),
         ("填写问卷", "survey", "填写问卷", "nav_survey"),
+        ("随访", "followup", "诊断更新/随访", "nav_followup"),
         ("找回编号", "retrieve", "找回随访编号", "nav_retrieve"),
         ("研究者导出", "admin", "研究者导出", "nav_admin"),
     ]
@@ -1684,6 +1688,52 @@ def render_retrieval() -> None:
         st.code(row["public_code"])
         st.write("Public key：")
         st.code(row["public_key"])
+
+
+def render_followup_placeholder() -> None:
+    st.title("诊断更新 / 随访")
+    st.caption("这个入口用于未来的纵向随访和“疑似转确诊”更新。目前是 Beta 占位页，暂不提交数据。")
+
+    st.markdown(
+        """
+        <div class="mf-intro">
+          <div class="mf-intro-title">如果之后正式确诊，请不要重新作为新用户填写基线问卷</div>
+          <div class="mf-intro-body">
+            正确做法是使用第一次提交后保存的 retrieval key 找回同一位参与者，
+            然后追加一份诊断更新或随访问卷。这样既保留“最初是疑似”的真实历史，
+            也能记录“后来被确诊”的时间和依据。
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_update, col_followup = st.columns(2, gap="medium")
+    with col_update:
+        st.markdown("### 诊断更新")
+        st.markdown(
+            """
+            未来会用于记录：
+            - 是否从疑似变为正式诊断
+            - 首次确诊年月
+            - 确诊依据和活检次数
+            - 医生给出的分期或 TNMB 更新
+            """
+        )
+    with col_followup:
+        st.markdown("### 定期随访")
+        st.markdown(
+            """
+            未来会用于记录：
+            - 最近三个月病情变化
+            - 皮肤面积、瘙痒和睡眠变化
+            - 新治疗、停药、复发或反跳
+            - 新检查或分期信息
+            """
+        )
+
+    st.info("Beta 阶段请先保存好提交后的 retrieval key。正式随访入口开放后，它会用来把新记录连接到同一位匿名参与者。")
+    st.link_button("先找回随访编号", "/?page=retrieve", width="stretch")
 
 
 def render_admin() -> None:
