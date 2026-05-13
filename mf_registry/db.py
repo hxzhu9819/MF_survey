@@ -1,4 +1,5 @@
 from __future__ import annotations
+from mf_registry.answers_schema import validate_answers
 
 import json
 import os
@@ -242,7 +243,7 @@ def register_questionnaire(
             bundle.questionnaire_id,
             bundle.version,
             bundle.sha256,
-            json_value(connection, bundle.body),
+            json_value(connection, bundle.schema.model_dump()),
             "published",
             now,
             now,
@@ -326,12 +327,12 @@ def save_submission(
             ),
         )
 
-        questions_by_id = {question["id"]: question for question in bundle.questions}
+        questions_by_id = {question.id: question for question in bundle.questions}
         user_input_questions = [
-            question for question in bundle.questions if question["type"] not in {"info_text", "subsection"}
+            question for question in bundle.questions if question.type not in {"info_text", "subsection"}
         ]
         for question in user_input_questions:
-            question_id = question["id"]
+            question_id = question.id
             value = answers.get(question_id)
             execute(
                 connection,
@@ -343,7 +344,7 @@ def save_submission(
                     str(uuid.uuid4()),
                     session_id,
                     question_id,
-                    question["export_name"],
+                    question.export_name,
                     json_value(connection, value),
                     now,
                     "patient_reported",
@@ -351,7 +352,7 @@ def save_submission(
             )
 
         export_answers = {
-            questions_by_id[question_id]["export_name"]: value
+            questions_by_id[question_id].export_name: value
             for question_id, value in answers.items()
             if question_id in questions_by_id
         }

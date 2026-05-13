@@ -29,7 +29,7 @@ from mf_registry.db import (
 )
 from mf_registry.export import dataframe_to_csv_bytes, rows_to_dataframe
 from mf_registry.identity import FollowupIdentityInput, using_local_pepper
-from mf_registry.questionnaire_schema import load_questionnaire
+from mf_registry.questionnaire_schema import load_questionnaire, QuestionnaireSchema
 from mf_registry.renderer_streamlit import (
     SUBMISSION_RESULT_STATE_KEY,
     clear_submission_in_progress,
@@ -50,7 +50,7 @@ st.set_page_config(
 )
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def cached_questionnaire(path: str, mtime: float):
     return load_questionnaire(path)
 
@@ -1573,7 +1573,7 @@ def render_submission_success(saved, database_status=None) -> None:
 
 def render_survey(bundle) -> None:
     st.title(bundle.title)
-    description = bundle.body["questionnaire"].get("description")
+    description = bundle.schema.questionnaire.description
     if description:
         st.caption(description)
 
@@ -1614,16 +1614,16 @@ def render_survey(bundle) -> None:
         st.button("填写另一份问卷", on_click=reset_saved_submission)
         return
 
-    answers, submitted = render_questionnaire_wizard(bundle.body)
+    answers, submitted = render_questionnaire_wizard(bundle.schema, view_registry=VIEW_REGISTRY, context=CONTEXT)
 
     if submitted:
-        missing_required = find_missing_required(bundle.body, answers)
+        missing_required = find_missing_required(bundle.schema, answers)
         if missing_required:
             clear_submission_in_progress()
             st.error("以下必填问题尚未完成：" + "、".join(missing_required))
             return
 
-        completion = completion_percent(bundle.body, answers)
+        completion = completion_percent(bundle.schema, answers)
         st.info("正在安全保存您的匿名问卷，请不要关闭页面。通常需要几秒钟，网络较慢时可能更久。")
         try:
             with st.spinner("正在写入安全数据库..."):
@@ -1856,7 +1856,7 @@ def render_database_status(connection) -> None:
                 st.metric(table, count)
 
 
-def find_missing_required(body: dict, answers: dict) -> list[str]:
+def find_missing_required(schema: QuestionnaireSchema, answers: dict) -> list[str]:
     missing: list[str] = []
     for module in body.get("modules", []):
         for question in module.get("questions", []):

@@ -1,11 +1,20 @@
 from __future__ import annotations
+from enum import Enum
+
+class AnswerStatus(str, Enum):
+    SKIPPED = '__prefer_not_to_answer__'
+
+SKIPPED_ANSWER = AnswerStatus.SKIPPED.value
+
+
 
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
+from pydantic import BaseModel, Field
 
 
 SUPPORTED_TYPES = {
@@ -27,101 +36,95 @@ SUPPORTED_TYPES = {
     "subsection",
 }
 
+class OptionSchema(BaseModel):
+    value: str | int | float
+    label: str
+
+class QuestionSchema(BaseModel):
+    id: str
+    export_name: str | None = None
+    type: str
+    label: str
+    description: str | None = None
+    required: bool = True
+    options: list[OptionSchema] | None = None
+    min: float | None = None
+    max: float | None = None
+    allow_unknown: bool = False
+    help: str | None = None
+    checkbox_label: str | None = None
+    anchors: dict[str, str] | None = None
+
+    def model_post_init(self, __context):
+        if not self.export_name and self.type not in {"info_text", "subsection"}:
+            self.export_name = self.id
+        if self.type not in SUPPORTED_TYPES:
+            raise ValueError(f"Unsupported question type {self.type} for {self.id}.")
+        if self.type in {"single_select", "multiselect"}:
+            if not self.options:
+                raise ValueError(f"{self.id} needs options.")
+
+class ModuleSchema(BaseModel):
+    id: str
+    title: str
+    description: str | None = None
+    why_we_ask: str | None = None
+    order: int = 0
+    derived_view: str | None = None
+    questions: list[QuestionSchema]
+
+class QuestionnaireMetadataSchema(BaseModel):
+    id: str
+    version: str
+    title: str
+    description: str | None = None
+    consent_version: str
+
+class QuestionnaireSchema(BaseModel):
+    questionnaire: QuestionnaireMetadataSchema
+    modules: list[ModuleSchema]
 
 @dataclass(frozen=True)
 class QuestionnaireBundle:
-    body: dict[str, Any]
+    schema: QuestionnaireSchema
     source_path: Path
     yaml_text: str
     sha256: str
 
     @property
     def questionnaire_id(self) -> str:
-        return str(self.body["questionnaire"]["id"])
+        return self.schema.questionnaire.id
 
     @property
     def version(self) -> str:
-        return str(self.body["questionnaire"]["version"])
+        return self.schema.questionnaire.version
 
     @property
     def title(self) -> str:
-        return str(self.body["questionnaire"]["title"])
+        return self.schema.questionnaire.title
 
     @property
     def consent_version(self) -> str:
-        return str(self.body["questionnaire"]["consent_version"])
+        return self.schema.questionnaire.consent_version
 
     @property
-    def questions(self) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        for module in sorted(self.body.get("modules", []), key=lambda item: item.get("order", 0)):
-            for question in module.get("questions", []):
+    def questions(self) -> list[QuestionSchema]:
+        items: list[QuestionSchema] = []
+        for module in sorted(self.schema.modules, key=lambda item: item.order):
+            for question in module.questions:
                 items.append(question)
         return items
-
 
 def load_questionnaire(path: str | Path) -> QuestionnaireBundle:
     source_path = Path(path)
     yaml_text = source_path.read_text(encoding="utf-8")
     body = yaml.safe_load(yaml_text)
-    validate_questionnaire(body)
+    
+    schema = QuestionnaireSchema.model_validate(body)
+    
     return QuestionnaireBundle(
-        body=body,
+        schema=schema,
         source_path=source_path,
         yaml_text=yaml_text,
         sha256=hashlib.sha256(yaml_text.encode("utf-8")).hexdigest(),
     )
-
-
-def validate_questionnaire(body: dict[str, Any]) -> None:
-    if not isinstance(body, dict):
-        raise ValueError("Questionnaire YAML must parse to an object.")
-
-    questionnaire = body.get("questionnaire")
-    if not isinstance(questionnaire, dict):
-        raise ValueError("Missing questionnaire metadata.")
-
-    for key in ("id", "version", "title", "consent_version"):
-        if not questionnaire.get(key):
-            raise ValueError(f"Missing questionnaire.{key}.")
-
-    modules = body.get("modules")
-    if not isinstance(modules, list) or not modules:
-        raise ValueError("Questionnaire must contain at least one module.")
-
-    question_ids: set[str] = set()
-    export_names: set[str] = set()
-    for module in modules:
-        if not module.get("id") or not module.get("title"):
-            raise ValueError("Every module needs id and title.")
-        questions = module.get("questions")
-        if not isinstance(questions, list):
-            raise ValueError(f"Module {module.get('id')} needs questions list.")
-        for question in questions:
-            validate_question(question)
-            question_id = question["id"]
-            export_name = question["export_name"]
-            if question_id in question_ids:
-                raise ValueError(f"Duplicate question id: {question_id}")
-            if export_name in export_names:
-                raise ValueError(f"Duplicate export_name: {export_name}")
-            question_ids.add(question_id)
-            export_names.add(export_name)
-
-
-def validate_question(question: dict[str, Any]) -> None:
-    for key in ("id", "export_name", "type", "label"):
-        if not question.get(key):
-            raise ValueError(f"Question missing {key}: {question}")
-
-    question_type = question["type"]
-    if question_type not in SUPPORTED_TYPES:
-        raise ValueError(f"Unsupported question type {question_type} for {question['id']}.")
-
-    if question_type in {"single_select", "multiselect"}:
-        options = question.get("options")
-        if not isinstance(options, list) or not options:
-            raise ValueError(f"{question['id']} needs options.")
-        for option in options:
-            if not isinstance(option, dict) or "value" not in option or "label" not in option:
-                raise ValueError(f"{question['id']} has invalid option: {option}")

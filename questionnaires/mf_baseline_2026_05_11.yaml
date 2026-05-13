@@ -353,6 +353,7 @@ modules:
         required: false
 
   - id: staging_skin_burden
+    derived_view: mf_staging
     title: "TNMB 和 mSWAT"
     description: |
       这一章把医生告知的正式分期、TNMB 四部分和 mSWAT 皮肤评分分开记录。
