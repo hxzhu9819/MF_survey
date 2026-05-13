@@ -55,7 +55,7 @@ def init_state(key: str, value: Any) -> None:
         st.session_state[key] = value
 
 def render_questionnaire_wizard(schema: QuestionnaireSchema, view_registry: dict[str, Callable] = None, context: dict[str, Any] = None) -> tuple[dict[str, Any], bool]:
-    modules = sorted(schema.modules, key=lambda item: item.get("order", 0))
+    modules = sorted(schema.modules, key=lambda item: item.order)
     if ANSWER_STATE_KEY not in st.session_state:
         st.session_state[ANSWER_STATE_KEY] = {}
     if STEP_STATE_KEY not in st.session_state:
@@ -151,8 +151,8 @@ def render_question(question: QuestionSchema, answers: dict[str, Any], index: in
         answers[question_id] = ans
 
     elif question_type == "year":
-        max_year = min(int(question.get("max", date.today().year)), date.today().year)
-        min_year = int(question.get("min", 1920))
+        max_year = min(int(question.max if question.max is not None else date.today().year), date.today().year)
+        min_year = int(question.min if question.min is not None else 1920)
         years = [None, *range(max_year, min_year - 1, -1)]
         init_state(key, value if not is_skipped else None)
         ans = st.selectbox("年份", options=years, format_func=lambda item: "请选择" if item is None else str(item), key=key, help=help_text, disabled=is_disabled)
@@ -363,57 +363,48 @@ def render_level_map(
         module_questions = [
             question for question in module.questions if question.type not in NON_DATA_QUESTION_TYPES
         ]
-        total = len(module_questions)
+        total = len(module_questions) or 1
         answered = sum(1 for question in module_questions if is_answered(answers.get(question.id), question))
-        state = "done" if answered == total and total > 0 else "pending"
-        if index == current_step:
-            state = "current"
+        percent = round(answered / total * 100)
+        state = "current" if index == current_step else "done" if percent == 100 else "open"
         levels.append(
             {
-                "title": module.title or f"模块 {index + 1}",
+                "label": f"{index + 1}\n{module.title or f'模块 {index + 1}'}\n{answered}/{total}",
+                "percent": percent,
                 "state": state,
-                "percent": answered / total * 100 if total > 0 else 100,
+                "target": index,
             }
         )
 
-    # Append the Review step
-    review_state = "pending"
-    if current_step == len(modules):
-        review_state = "current"
-    elif completion_percent(schema, answers) >= 100:
-        review_state = "done"
-        
-    levels.append({
-        "title": "确认提交",
-        "state": review_state,
-        "percent": 0 if review_state != "done" else 100
-    })
+    review_state = "current" if current_step == len(modules) else "open"
+    levels.append(
+        {
+            "label": "终\n确认提交\nFinal",
+            "percent": 0,
+            "state": review_state,
+            "target": len(modules),
+        }
+    )
 
-    render_level_map_styles(levels, row_size=6)
-    st.markdown('<div class="mf-level-map-native-start"></div>', unsafe_allow_html=True)
-    
-    cols = st.columns(len(levels), gap="small")
-    for index, (col, level) in enumerate(zip(cols, levels)):
-        with col:
-            st.button(
-                level["title"],
-                key=f"level_map_{index}",
-                use_container_width=True,
-                on_click=save_current_answers_and_jump,
-                args=(schema, answers, index),
-            )
-            style_class = level["state"]
-            label = "进行中" if style_class == "current" else ("完成" if style_class == "done" else "未完成")
-            st.markdown(
-                f"""
-                <div class="mf-level-fill {style_class}">
-                  <span>{index + 1}</span>
-                  <strong>{html.escape(level['title'])}</strong>
-                  <em>{label}</em>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    row_size = 4
+    render_level_map_styles(levels, row_size)
+    for row_index, start in enumerate(range(0, len(levels), row_size)):
+        row_levels = levels[start : start + row_size]
+        st.markdown(
+            f'<div class="mf-level-map-native-start mf-level-map-row-{row_index}"></div>',
+            unsafe_allow_html=True,
+        )
+        columns = st.columns(len(row_levels), gap="small")
+        for column_index, level in enumerate(row_levels):
+            level_index = start + column_index
+            with columns[column_index]:
+                st.button(
+                    level["label"],
+                    key=f"level_map_{level_index}",
+                    use_container_width=True,
+                    on_click=save_current_answers_and_jump,
+                    args=(schema, answers, level["target"]),
+                )
 
 def save_current_answers_and_jump(schema: QuestionnaireSchema, answers: dict[str, Any], target_step: int) -> None:
     st.session_state[ANSWER_STATE_KEY] = answers
@@ -494,7 +485,7 @@ def render_review_step(schema: QuestionnaireSchema, answers: dict[str, Any]) -> 
         st.info("正在安全保存您的匿名问卷，请不要关闭页面。通常需要几秒钟，网络较慢时可能更久。")
 
     with st.expander("查看各章节完成情况", expanded=True):
-        for module in sorted(schema.modules, key=lambda item: item.get("order", 0)):
+        for module in sorted(schema.modules, key=lambda item: item.order):
             questions = [
                 question for question in module.questions if question.type not in NON_DATA_QUESTION_TYPES
             ]
