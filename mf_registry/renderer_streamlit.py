@@ -128,18 +128,20 @@ def render_question(question: QuestionSchema, answers: dict[str, Any], index: in
     is_disabled = get_skip_state("skip") or get_skip_state("unknown")
 
     if question_type == "text":
-        init_state(key, value if not is_skipped else "")
+        init_state(key, str(value) if not is_skipped and value is not None else "")
         ans = st.text_input("填写内容", key=key, help=help_text, label_visibility="collapsed", disabled=is_disabled)
         answers[question_id] = ans
 
     elif question_type == "textarea":
-        init_state(key, value if not is_skipped else "")
+        init_state(key, str(value) if not is_skipped and value is not None else "")
         ans = st.text_area("填写内容", key=key, help=help_text, label_visibility="collapsed", disabled=is_disabled)
         answers[question_id] = ans
 
     elif question_type == "integer":
         init_state(key, value if not is_skipped else None)
-        ans = st.number_input("填写数字", min_value=question.min, max_value=question.max, value=None, step=1, key=key, help=help_text, label_visibility="collapsed", disabled=is_disabled)
+        min_val_int = int(question.min) if question.min is not None else None
+        max_val_int = int(question.max) if question.max is not None else None
+        ans = st.number_input("填写数字", min_value=min_val_int, max_value=max_val_int, value=None, step=1, key=key, help=help_text, label_visibility="collapsed", disabled=is_disabled)
         if question.allow_unknown and render_skip_checkbox("unknown", "我不确定，先留空"):
             answers[question_id] = SKIPPED_ANSWER
         else:
@@ -147,7 +149,9 @@ def render_question(question: QuestionSchema, answers: dict[str, Any], index: in
 
     elif question_type == "decimal":
         init_state(key, value if not is_skipped else None)
-        ans = st.number_input("填写数字", min_value=question.min, max_value=question.max, value=None, key=key, help=help_text, label_visibility="collapsed", disabled=is_disabled)
+        min_val_float = float(question.min) if question.min is not None else None
+        max_val_float = float(question.max) if question.max is not None else None
+        ans = st.number_input("填写数字", min_value=min_val_float, max_value=max_val_float, value=None, step=0.01, key=key, help=help_text, label_visibility="collapsed", disabled=is_disabled)
         answers[question_id] = ans
 
     elif question_type == "year":
