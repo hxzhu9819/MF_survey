@@ -30,7 +30,19 @@ from mf_registry.db import (
 from mf_registry.export import dataframe_to_csv_bytes, rows_to_dataframe
 from mf_registry.identity import FollowupIdentityInput, using_local_pepper
 from mf_registry.questionnaire_schema import load_questionnaire, QuestionnaireSchema
+
+from mf_registry.views import render_tnmb_helper_board
+from mf_registry.regions import REGIONS
+
+VIEW_REGISTRY = {
+    "mf_staging": render_tnmb_helper_board
+}
+CONTEXT = {
+    "regions": REGIONS
+}
+
 from mf_registry.renderer_streamlit import (
+
     SUBMISSION_RESULT_STATE_KEY,
     clear_submission_in_progress,
     completion_percent,
@@ -1857,16 +1869,14 @@ def render_database_status(connection) -> None:
 
 
 def find_missing_required(schema: QuestionnaireSchema, answers: dict) -> list[str]:
+    from mf_registry.renderer_streamlit import is_answered
     missing: list[str] = []
-    for module in body.get("modules", []):
-        for question in module.get("questions", []):
-            if not question.get("required"):
+    for module in schema.modules:
+        for question in module.questions:
+            if not question.required:
                 continue
-            value = answers.get(question["id"])
-            if value in (None, "", []):
-                missing.append(question["label"])
-            elif question["type"] == "boolean" and value is not True:
-                missing.append(question["label"])
+            if not is_answered(answers.get(question.id), question):
+                missing.append(question.label)
     return missing
 
 
