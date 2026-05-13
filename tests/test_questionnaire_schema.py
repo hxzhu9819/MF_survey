@@ -7,6 +7,7 @@ from mf_registry.derived import derive_variables
 from mf_registry.export import rows_to_dataframe
 from mf_registry.identity import FollowupIdentityInput
 from mf_registry.questionnaire_schema import load_questionnaire
+from mf_registry import renderer_streamlit as renderer
 
 
 NON_DATA_TYPES = {"info_text", "subsection"}
@@ -181,6 +182,48 @@ def test_export_dataframe_normalizes_mixed_values_for_streamlit():
     assert dataframe.loc[1, "lymph_node_or_visceral"] == "false"
     assert dataframe.loc[0, "selected"] == "true"
     assert dataframe.loc[1, "selected"] == '["a", "b"]'
+
+
+def test_hidden_month_widget_does_not_overwrite_saved_answer():
+    body = {
+        "modules": [
+            {
+                "questions": [
+                    {
+                        "id": "first_symptom_month",
+                        "type": "month",
+                        "allow_unknown": True,
+                    }
+                ]
+            }
+        ]
+    }
+    answers = {"first_symptom_month": "2024-03"}
+    original_session_state = renderer.st.session_state
+    renderer.st.session_state = {}
+    try:
+        renderer.sync_answers_from_widgets(body, answers)
+    finally:
+        renderer.st.session_state = original_session_state
+
+    assert answers["first_symptom_month"] == "2024-03"
+
+
+def test_explicit_skip_counts_as_answer_and_restores_checkbox():
+    question = {
+        "id": "first_symptom_month",
+        "type": "month",
+        "allow_unknown": True,
+    }
+    answers = {"first_symptom_month": renderer.SKIPPED_ANSWER}
+    original_session_state = renderer.st.session_state
+    renderer.st.session_state = {"q_first_symptom_month_unknown": False}
+    try:
+        renderer.restore_question_state(question, "q_first_symptom_month", answers)
+        assert renderer.st.session_state["q_first_symptom_month_unknown"] is True
+        assert renderer.is_answered(renderer.SKIPPED_ANSWER, question) is True
+    finally:
+        renderer.st.session_state = original_session_state
 
 
 def test_followup_identity_stores_hashes_but_never_exports_raw_contact():

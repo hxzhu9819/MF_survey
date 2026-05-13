@@ -250,7 +250,7 @@ def sync_answers_from_widgets(body: dict[str, Any], answers: dict[str, Any]) -> 
             if question_type == "month":
                 year_key = f"{key}_year"
                 month_key = f"{key}_month"
-                if year_key not in st.session_state and month_key not in st.session_state and unknown_key not in st.session_state:
+                if year_key not in st.session_state and month_key not in st.session_state:
                     continue
                 year = st.session_state.get(year_key)
                 month = st.session_state.get(month_key)
