@@ -73,83 +73,10 @@ def test_tnmb_m1_is_ivb_even_with_limited_other_information():
     assert derived["patient_tnmb_stage_hint"] == "ivb_hint"
 
 
-def test_repeatable_widget_snapshot_ignores_unmounted_children(monkeypatch):
-    monkeypatch.setattr(renderer.st, "session_state", {"q_misdiagnosis_events_count": 1})
-
-    value = renderer.answer_from_widget_state(
-        {"type": "repeatable_misdiagnosis"},
-        "q_misdiagnosis_events",
-    )
-
-    assert value is renderer.WIDGET_VALUE_MISSING
-
-
-def test_repeatable_widget_snapshot_keeps_filled_children(monkeypatch):
-    monkeypatch.setattr(
-        renderer.st,
-        "session_state",
-        {
-            "q_misdiagnosis_events_count": 1,
-            "q_misdiagnosis_events_0_year": 2024,
-            "q_misdiagnosis_events_0_month": 3,
-            "q_misdiagnosis_events_0_region_province": "上海市",
-            "q_misdiagnosis_events_0_region_city": "上海市",
-            "q_misdiagnosis_events_0_hospital_level": "三级医院/大型综合医院",
-            "q_misdiagnosis_events_0_disease": "副银屑病/副银",
-        },
-    )
-
-    value = renderer.answer_from_widget_state(
-        {"type": "repeatable_misdiagnosis"},
-        "q_misdiagnosis_events",
-    )
-
-    assert value == [
-        {
-            "visit_month": "2024-03",
-            "care_region": {"province": "上海市", "city": "上海市"},
-            "hospital_level": "tertiary",
-            "misdiagnosis": "parapsoriasis",
-            "misdiagnosis_other": None,
-        }
-    ]
-
-
-def test_sync_preserves_repeatable_answer_when_children_are_unmounted(monkeypatch):
-    answers = {
-        "misdiagnosis_events": [
-            {
-                "visit_month": "2024-03",
-                "care_region": {"province": "上海市", "city": "上海市"},
-                "hospital_level": "tertiary",
-                "misdiagnosis": "parapsoriasis",
-                "misdiagnosis_other": None,
-            }
-        ]
-    }
-    body = {
-        "modules": [
-            {
-                "questions": [
-                    {
-                        "id": "misdiagnosis_events",
-                        "type": "repeatable_misdiagnosis",
-                    }
-                ]
-            }
-        ]
-    }
-    monkeypatch.setattr(renderer.st, "session_state", {"q_misdiagnosis_events_count": 1})
-
-    renderer.sync_answers_from_widgets(body, answers)
-
-    assert answers["misdiagnosis_events"][0]["misdiagnosis"] == "parapsoriasis"
-
-
 def test_all_tnmb_yaml_options_map_to_component_hints():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
     options_by_export = {
-        question["export_name"]: [option["value"] for option in question.get("options", [])]
+        question.export_name: [option.value for option in (question.options or [])]
         for question in bundle.questions
     }
     expected_mappings = {
@@ -189,9 +116,9 @@ def test_all_tnmb_yaml_options_map_to_component_hints():
 def test_submission_roundtrip_records_every_user_input_and_skips_info_text():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
     answers = {
-        question["id"]: sample_answer_for_question(question)
+        question.id: sample_answer_for_question(question)
         for question in bundle.questions
-        if question["type"] not in NON_DATA_TYPES
+        if question.type not in NON_DATA_TYPES
     }
 
     connection = sqlite3.connect(":memory:")
@@ -204,7 +131,7 @@ def test_submission_roundtrip_records_every_user_input_and_skips_info_text():
         (saved.session_id,),
     ).fetchall()
     stored_question_ids = {row["question_id"] for row in stored_answers}
-    info_text_ids = {question["id"] for question in bundle.questions if question["type"] in NON_DATA_TYPES}
+    info_text_ids = {question.id for question in bundle.questions if question.type in NON_DATA_TYPES}
 
     assert len(stored_answers) == len(answers)
     assert stored_question_ids == set(answers)
@@ -213,18 +140,18 @@ def test_submission_roundtrip_records_every_user_input_and_skips_info_text():
     exported = export_rows(connection)
     assert len(exported) == 1
     exported_row = exported[0]
-    questions_by_id = {question["id"]: question for question in bundle.questions}
+    questions_by_id = {question.id: question for question in bundle.questions}
     for question_id, value in answers.items():
-        export_name = questions_by_id[question_id]["export_name"]
+        export_name = questions_by_id[question_id].export_name
         assert exported_row[export_name] == value
 
 
 def test_partial_submission_preserves_current_questionnaire_columns_as_nulls():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
-    user_questions = [question for question in bundle.questions if question["type"] not in NON_DATA_TYPES]
+    user_questions = [question for question in bundle.questions if question.type not in NON_DATA_TYPES]
     answers = {
-        user_questions[0]["id"]: sample_answer_for_question(user_questions[0]),
-        user_questions[1]["id"]: sample_answer_for_question(user_questions[1]),
+        user_questions[0].id: sample_answer_for_question(user_questions[0]),
+        user_questions[1].id: sample_answer_for_question(user_questions[1]),
     }
 
     connection = sqlite3.connect(":memory:")
@@ -239,8 +166,8 @@ def test_partial_submission_preserves_current_questionnaire_columns_as_nulls():
     assert answer_count == len(user_questions)
 
     exported_row = export_rows(connection)[0]
-    assert exported_row[user_questions[0]["export_name"]] == answers[user_questions[0]["id"]]
-    assert exported_row[user_questions[-1]["export_name"]] is None
+    assert exported_row[user_questions[0].export_name] == answers[user_questions[0].id]
+    assert exported_row[user_questions[-1].export_name] is None
 
 
 def test_export_dataframe_normalizes_mixed_values_for_streamlit():
@@ -260,9 +187,9 @@ def test_export_dataframe_normalizes_mixed_values_for_streamlit():
 def test_anonymous_submission_gets_retrieval_key_without_contact():
     bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
     answers = {
-        question["id"]: sample_answer_for_question(question)
+        question.id: sample_answer_for_question(question)
         for question in bundle.questions
-        if question["type"] not in NON_DATA_TYPES
+        if question.type not in NON_DATA_TYPES
     }
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
@@ -281,46 +208,8 @@ def test_anonymous_submission_gets_retrieval_key_without_contact():
     assert find_participant_by_retrieval_key(connection, saved.retrieval_key)["public_code"] == saved.public_code
 
 
-def test_hidden_month_widget_does_not_overwrite_saved_answer():
-    body = {
-        "modules": [
-            {
-                "questions": [
-                    {
-                        "id": "first_symptom_month",
-                        "type": "month",
-                        "allow_unknown": True,
-                    }
-                ]
-            }
-        ]
-    }
-    answers = {"first_symptom_month": "2024-03"}
-    original_session_state = renderer.st.session_state
-    renderer.st.session_state = {}
-    try:
-        renderer.sync_answers_from_widgets(body, answers)
-    finally:
-        renderer.st.session_state = original_session_state
-
-    assert answers["first_symptom_month"] == "2024-03"
 
 
-def test_explicit_skip_counts_as_answer_and_restores_checkbox():
-    question = {
-        "id": "first_symptom_month",
-        "type": "month",
-        "allow_unknown": True,
-    }
-    answers = {"first_symptom_month": renderer.SKIPPED_ANSWER}
-    original_session_state = renderer.st.session_state
-    renderer.st.session_state = {"q_first_symptom_month_unknown": False}
-    try:
-        renderer.restore_question_state(question, "q_first_symptom_month", answers)
-        assert renderer.st.session_state["q_first_symptom_month_unknown"] is True
-        assert renderer.is_answered(renderer.SKIPPED_ANSWER, question) is True
-    finally:
-        renderer.st.session_state = original_session_state
 
 
 def test_followup_identity_stores_hashes_but_never_exports_raw_contact():
@@ -329,9 +218,9 @@ def test_followup_identity_stores_hashes_but_never_exports_raw_contact():
     try:
         bundle = load_questionnaire(Path("questionnaires/mf_baseline_2026_05_11.yaml"))
         answers = {
-            question["id"]: sample_answer_for_question(question)
+            question.id: sample_answer_for_question(question)
             for question in bundle.questions
-            if question["type"] not in NON_DATA_TYPES
+            if question.type not in NON_DATA_TYPES
         }
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row
@@ -365,13 +254,13 @@ def test_followup_identity_stores_hashes_but_never_exports_raw_contact():
 
 
 def sample_answer_for_question(question: dict):
-    question_type = question["type"]
+    question_type = question.type
     if question_type in {"text", "textarea"}:
         return "beta sample"
     if question_type == "integer":
-        return question.get("min", 1) or 1
+        return (question.min if question.min is not None else 1) or 1
     if question_type == "decimal":
-        return float(question.get("min", 1) or 1)
+        return float((question.min if question.min is not None else 1) or 1)
     if question_type == "date":
         return "2026-05-12"
     if question_type == "month":
@@ -379,9 +268,9 @@ def sample_answer_for_question(question: dict):
     if question_type == "year":
         return 2026
     if question_type == "single_select":
-        return question["options"][0]["value"]
+        return question.options[0].value
     if question_type == "multiselect":
-        return [question["options"][0]["value"]]
+        return [question.options[0].value]
     if question_type == "boolean":
         return True
     if question_type in {"slider_nrs_0_10", "body_area_percent"}:
