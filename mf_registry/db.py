@@ -371,6 +371,8 @@ def save_submission(
                 ),
             )
 
+    verify_saved_submission(connection, session_id, participant_id, expected_answer_count=len(user_input_questions))
+
     return SavedSubmission(
         participant_id=participant_id,
         public_code=public_code,
@@ -378,6 +380,35 @@ def save_submission(
         followup_public_key=identity_material.public_key,
         retrieval_key=identity_material.retrieval_key if not existing_participant else None,
     )
+
+
+def verify_saved_submission(connection, session_id: str, participant_id: str, expected_answer_count: int) -> None:
+    row = execute(
+        connection,
+        """
+        select
+          (select count(*) from participants where id = ?) as participant_count,
+          (select count(*) from participant_followup_keys where participant_id = ?) as followup_key_count,
+          (select count(*) from survey_sessions where id = ? and submitted_at is not null) as session_count,
+          (select count(*) from answers where session_id = ?) as answer_count,
+          (select count(*) from derived_variables where session_id = ?) as derived_count
+        """,
+        (participant_id, participant_id, session_id, session_id, session_id),
+    ).fetchone()
+    if not row:
+        raise RuntimeError("保存后校验失败：无法读取保存结果。")
+
+    participant_count = int(row["participant_count"])
+    followup_key_count = int(row["followup_key_count"])
+    session_count = int(row["session_count"])
+    answer_count = int(row["answer_count"])
+    derived_count = int(row["derived_count"])
+    if participant_count != 1 or followup_key_count < 1 or session_count != 1 or answer_count != expected_answer_count or derived_count < 1:
+        raise RuntimeError(
+            "保存后校验失败："
+            f"participants={participant_count}, followup_keys={followup_key_count}, "
+            f"sessions={session_count}, answers={answer_count}/{expected_answer_count}, derived={derived_count}。"
+        )
 
 
 def find_participant_by_retrieval_key(connection, retrieval_key: str):
@@ -399,6 +430,24 @@ def count_submissions(connection) -> int:
     init_db(connection)
     row = execute(connection, "select count(*) as count from survey_sessions where submitted_at is not null").fetchone()
     return int(row["count"])
+
+
+def diagnostic_table_counts(connection) -> dict[str, int]:
+    init_db(connection)
+    tables = [
+        "participants",
+        "participant_followup_keys",
+        "consents",
+        "questionnaire_versions",
+        "survey_sessions",
+        "answers",
+        "derived_variables",
+    ]
+    counts: dict[str, int] = {}
+    for table in tables:
+        row = execute(connection, f"select count(*) as count from {table}").fetchone()
+        counts[table] = int(row["count"])
+    return counts
 
 
 def export_rows(connection) -> list[dict[str, Any]]:

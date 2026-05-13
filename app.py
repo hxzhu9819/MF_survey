@@ -20,6 +20,7 @@ from mf_registry.db import (
     connect,
     count_submissions,
     describe_connection,
+    diagnostic_table_counts,
     export_rows,
     find_participant_by_retrieval_key,
     init_db,
@@ -1794,6 +1795,17 @@ def render_database_status(connection) -> None:
         st.error("Supabase/Postgres 已配置，但连接检查失败。请检查数据库 URL、密码、网络和 Supabase 项目状态。")
     else:
         st.success("Supabase/Postgres 连接正常，问卷提交和导出会使用该数据源。")
+
+    with st.expander("数据表计数", expanded=False):
+        try:
+            counts = diagnostic_table_counts(connection)
+        except Exception as error:
+            st.error(f"无法读取数据表计数：{error}")
+            return
+        count_cols = st.columns(4, gap="small")
+        for index, (table, count) in enumerate(counts.items()):
+            with count_cols[index % len(count_cols)]:
+                st.metric(table, count)
 
 
 def find_missing_required(body: dict, answers: dict) -> list[str]:
