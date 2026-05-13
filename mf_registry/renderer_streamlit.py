@@ -490,7 +490,7 @@ def render_review_step(schema: QuestionnaireSchema, answers: dict[str, Any]) -> 
                 question for question in module.questions if question.type not in NON_DATA_QUESTION_TYPES
             ]
             answered = sum(1 for question in questions if is_answered(answers.get(question.id), question))
-            st.write(f"{module['title']}：{answered}/{len(questions)}")
+            st.write(f"{module.title}：{answered}/{len(questions)}")
 
     back_col, submit_col = st.columns([1, 1], gap="small")
     with back_col:
@@ -602,7 +602,7 @@ def render_question_header(question: QuestionSchema, index: int | None) -> None:
         unsafe_allow_html=True,
     )
     if question.help:
-        st.caption(question["help"])
+        st.caption(question.help)
 
 def completion_percent(schema: QuestionnaireSchema, answers: dict[str, Any]) -> float:
     questions = [
