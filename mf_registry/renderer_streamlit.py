@@ -5,6 +5,7 @@ import html
 from typing import Any
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from mf_registry.questionnaire_schema import SKIPPED_ANSWER
 from mf_registry.regions import REGIONS
@@ -67,6 +68,12 @@ def render_questionnaire_wizard(schema: QuestionnaireSchema, view_registry: dict
 
     answers = st.session_state[ANSWER_STATE_KEY]
     
+    if st.session_state.pop("_scroll_to_top", False):
+        components.html(
+            "<script>window.parent.document.querySelector('.main').scrollTop = 0;</script>",
+            height=0
+        )
+
     render_level_map(schema, modules, current_step, answers)
     completion = completion_percent(schema, answers)
     st.progress(completion / 100, text=f"已完成 {completion}%")
@@ -413,6 +420,7 @@ def render_level_map(
 def save_current_answers_and_jump(schema: QuestionnaireSchema, answers: dict[str, Any], target_step: int) -> None:
     st.session_state[ANSWER_STATE_KEY] = answers
     st.session_state[STEP_STATE_KEY] = target_step
+    st.session_state["_scroll_to_top"] = True
 
 def render_module_intro(module: ModuleSchema) -> None:
     title = html.escape(str(module.title or ""))
@@ -457,11 +465,13 @@ def render_step_controls(current_step: int, max_step: int) -> None:
     with back_col:
         if st.button("上一关", disabled=current_step == 0, width="stretch"):
             st.session_state[STEP_STATE_KEY] = max(current_step - 1, 0)
+            st.session_state["_scroll_to_top"] = True
             st.rerun()
     with next_col:
         label = "进入确认页" if current_step == max_step - 1 else "下一关"
         if st.button(label, type="primary", width="stretch"):
             st.session_state[STEP_STATE_KEY] = min(current_step + 1, max_step)
+            st.session_state["_scroll_to_top"] = True
             st.rerun()
 
 def render_review_step(schema: QuestionnaireSchema, answers: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -500,6 +510,7 @@ def render_review_step(schema: QuestionnaireSchema, answers: dict[str, Any]) -> 
     with back_col:
         if st.button("返回上一关", width="stretch", disabled=is_saving):
             st.session_state[STEP_STATE_KEY] = max(len(schema.modules) - 1, 0)
+            st.session_state["_scroll_to_top"] = True
             st.rerun()
     confirmed = st.checkbox(
         "我已检查答案，并确认提交本次问卷。当前 Beta 版本提交后不能在页面内直接修改。",
